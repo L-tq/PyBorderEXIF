@@ -74,12 +74,24 @@ def _load_font(size):
     """Load a font at the given size. Falls back to default."""
     try:
         font_paths = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/TTF/DejaVuSans.ttf",
-            "/System/Library/Fonts/Helvetica.ttc",
+            # English fonts
+            "C:\\Windows\\Fonts\\roboto.ttf",
             "C:\\Windows\\Fonts\\arial.ttf",
-            "C:\\Windows\\Fonts\\calibri.ttf",
+            "/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf",
+            "/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf",
+            "/System/Library/Fonts/Roboto.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            # Chinese fonts - 思源黑体 (Source Han Sans / Noto Sans CJK)
+            "C:\\Windows\\Fonts\\notosanscjk.ttc",
+            "C:\\Windows\\Fonts\\msyh.ttc",
+            "C:\\Windows\\Fonts\\msyhbd.ttc",
+            "/System/Library/Fonts/NotoSansCJK-Regular.ttc",
+            "/System/Library/Fonts/NotoSansCJK.ttc",
+            "/System/Library/Fonts/PingFang.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "C:\\Windows\\Fonts\\simsun.ttc",
+            "C:\\Windows\\Fonts\\simhei.ttf",
         ]
         for fp in font_paths:
             if os.path.exists(fp):

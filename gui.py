@@ -313,7 +313,7 @@ class PyBorderEXIFGUI:
     def _browse_logo(self, path_var):
         f = filedialog.askopenfilename(
             title="Select Logo",
-            filetypes=[("Image Files", "*.png *.jpg *.jpeg *.bmp *.gif"), ("All Files", "*.*")]
+            filetypes=[("Logo Files", "*.png *.jpg *.jpeg *.bmp *.gif *.svg"), ("All Files", "*.*")]
         )
         if f:
             path_var.set(f)

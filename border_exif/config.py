@@ -21,8 +21,8 @@ DEFAULT_METADATA_FIELDS = [
 ]
 
 DEFAULT_CONFIG = {
-    "input_dir": "",
-    "output_dir": "",
+    "input_dir": os.path.expanduser("~/Pictures"),
+    "output_dir": os.path.expanduser("~/Pictures/bordered"),
     "logo_dir": "",
     "author_name": "",
     "border": {

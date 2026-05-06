@@ -1,7 +1,15 @@
 """Logo placement on bordered images."""
 
 import os
+from io import BytesIO
 from PIL import Image
+
+
+def _load_svg_logo(logo_path, max_size):
+    """Render an SVG logo to a PIL Image."""
+    import cairosvg
+    png_bytes = cairosvg.svg2png(url=logo_path, output_width=max_size, output_height=max_size)
+    return Image.open(BytesIO(png_bytes)).convert("RGBA")
 
 
 def _load_logo(logo_path, max_size=None):
@@ -102,7 +110,13 @@ def place_logos(image, logos_config, border_pixels):
 
         try:
             scale = logo_cfg.get("scale", 0.5)
-            logo = _load_logo(path, max_size=int(max_logo_dim * scale * 2))
+            max_size = int(max_logo_dim * scale * 2)
+
+            # Detect SVG and use appropriate loader
+            if path.lower().endswith(".svg"):
+                logo = _load_svg_logo(path, max_size)
+            else:
+                logo = _load_logo(path, max_size=max_size)
 
             position = logo_cfg.get("position", "bottom-left")
             offset_x = logo_cfg.get("offset_x", 0)

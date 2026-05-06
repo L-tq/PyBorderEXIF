@@ -1,4 +1,4 @@
-author_name: Test Photographer
+author_name: 派大扔
 border:
   color:
   - 255
@@ -10,13 +10,17 @@ border:
     right: 50
     top: 10
   preset: polaroid
-  use_custom: true
+  use_custom: false
 exif:
   alignment: left
   author_name: Test Photographer
   enabled: true
   fields:
+  - aperture
   - camera_model
+  - focal_length_35mm
+  - iso
+  - lens_model
   font_color:
   - 0
   - 0
@@ -25,13 +29,13 @@ exif:
   line_spacing: 4
   margin: 10
   position: bottom
-input_dir: /tmp
+input_dir: D:/ltq/photography/Month 05/佛山车展/肥头靓仔仔
 logo_dir: ''
 logos:
 - enabled: false
   offset_x: 0
   offset_y: 0
-  path: ''
+  path: D:/ltq/PyBorderEXIF/Sony_Alpha_logo.svg
   position: bottom-left
   scale: 0.5
 - enabled: false
@@ -56,4 +60,4 @@ output:
   format: JPEG
   jpeg_quality: 95
   suffix: _bordered
-output_dir: /tmp/out
+output_dir: D:/ltq/photography/Month 05/佛山车展/肥头靓仔仔/佛山车展-肥头靓仔仔_导出/border
