@@ -1,0 +1,59 @@
+author_name: Test Photographer
+border:
+  color:
+  - 255
+  - 255
+  - 255
+  custom:
+    bottom: 50
+    left: 10
+    right: 50
+    top: 10
+  preset: polaroid
+  use_custom: true
+exif:
+  alignment: left
+  author_name: Test Photographer
+  enabled: true
+  fields:
+  - camera_model
+  font_color:
+  - 0
+  - 0
+  - 0
+  font_size: 24
+  line_spacing: 4
+  margin: 10
+  position: bottom
+input_dir: /tmp
+logo_dir: ''
+logos:
+- enabled: false
+  offset_x: 0
+  offset_y: 0
+  path: ''
+  position: bottom-left
+  scale: 0.5
+- enabled: false
+  offset_x: 0
+  offset_y: 0
+  path: ''
+  position: bottom-right
+  scale: 0.5
+- enabled: false
+  offset_x: 0
+  offset_y: 0
+  path: ''
+  position: top-left
+  scale: 0.5
+- enabled: false
+  offset_x: 0
+  offset_y: 0
+  path: ''
+  position: top-right
+  scale: 0.5
+output:
+  format: JPEG
+  jpeg_quality: 95
+  suffix: _bordered
+output_dir: /tmp/out
