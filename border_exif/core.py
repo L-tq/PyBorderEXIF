@@ -399,6 +399,8 @@ def get_supported_images_from_dir(directory):
                  ".raf", ".pef", ".srf", ".raw"}
     files = []
     for f in sorted(os.listdir(directory)):
+        if f.startswith("."):
+            continue
         ext = os.path.splitext(f)[1].lower()
         if ext in supported:
             files.append(os.path.join(directory, f))

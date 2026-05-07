@@ -27,3 +27,6 @@ build/
 
 # image files
 *.svg
+
+# log
+*.log

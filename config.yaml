@@ -1,4 +1,4 @@
-author_name: ÅÉ´óÈÓ
+author_name: æ´¾å¤§æ‰”
 border:
   color:
   - 255
@@ -9,18 +9,19 @@ border:
     left: 10
     right: 50
     top: 10
-  preset: polaroid
+  preset: small
   use_custom: false
 exif:
   alignment: left
   author_name: Test Photographer
   enabled: true
   fields:
-  - aperture
-  - camera_model
+  - body_serial_number
   - focal_length_35mm
   - iso
   - lens_model
+  - software
+  - white_balance
   font_color:
   - 0
   - 0
@@ -29,7 +30,7 @@ exif:
   line_spacing: 4
   margin: 10
   position: bottom
-input_dir: D:/ltq/photography/Month 05/·ðÉ½³µÕ¹/·ÊÍ·ö¦×Ð×Ð
+input_dir: /home/scd/Downloads
 logo_dir: ''
 logos:
 - enabled: false
@@ -60,4 +61,4 @@ output:
   format: JPEG
   jpeg_quality: 95
   suffix: _bordered
-output_dir: D:/ltq/photography/Month 05/·ðÉ½³µÕ¹/·ÊÍ·ö¦×Ð×Ð/·ðÉ½³µÕ¹-·ÊÍ·ö¦×Ð×Ð_µ¼³ö/border
+output_dir: /home/scd/Downloads

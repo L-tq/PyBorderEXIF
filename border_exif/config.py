@@ -55,16 +55,6 @@ DEFAULT_CONFIG = {
 }
 
 
-def _load_config(path=None):
-    path = path or DEFAULT_CONFIG_PATH
-    if os.path.exists(path):
-        with open(path, "r") as f:
-            data = yaml.safe_load(f)
-        if data:
-            return _deep_merge(DEFAULT_CONFIG, data)
-    return dict(DEFAULT_CONFIG)
-
-
 def _deep_merge(default, override):
     """Recursively merge override into default dict."""
     result = dict(default)
@@ -74,6 +64,29 @@ def _deep_merge(default, override):
         else:
             result[key] = value
     return result
+
+
+def _save_config(data, path):
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+
+
+def _load_config(path=None):
+    path = path or DEFAULT_CONFIG_PATH
+    if os.path.exists(path):
+        data = None
+        for encoding in ("utf-8", "gbk", "gb18030"):
+            try:
+                with open(path, "r", encoding=encoding) as f:
+                    data = yaml.safe_load(f)
+                if encoding != "utf-8":
+                    _save_config(data, path)
+                break
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+        if data:
+            return _deep_merge(DEFAULT_CONFIG, data)
+    return dict(DEFAULT_CONFIG)
 
 
 class Config:
@@ -90,8 +103,7 @@ class Config:
             os.makedirs(d, exist_ok=True)
 
     def save(self):
-        with open(self._path, "w") as f:
-            yaml.dump(self._data, f, default_flow_style=False, allow_unicode=True)
+        _save_config(self._data, self._path)
 
     # --- Convenience accessors ---
 

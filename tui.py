@@ -3,6 +3,7 @@
 
 import os
 import sys
+import asyncio
 
 from border_exif.config import Config, BORDER_PRESETS
 from border_exif.core import process_images, get_supported_images_from_dir
@@ -47,9 +48,11 @@ class ProcessingScreen(Screen):
         yield Footer()
 
     def on_mount(self):
-        self._run_processing()
+        asyncio.create_task(self._do_processing())
 
-    async def _run_processing(self):
+    async def _do_processing(self):
+        from border_exif.core import process_image
+
         progress = self.query_one("#progress", ProgressBar)
         current_file = self.query_one("#current-file", Static)
 
@@ -57,8 +60,7 @@ class ProcessingScreen(Screen):
         for i, path in enumerate(self._images):
             current_file.update(f"[{i+1}/{total}] {os.path.basename(path)}")
             try:
-                from border_exif.core import process_image
-                process_image(path, self._config)
+                await asyncio.to_thread(process_image, path, self._config)
             except Exception as e:
                 current_file.update(f"[{i+1}/{total}] FAILED: {os.path.basename(path)} - {e}")
             progress.advance(1)
@@ -69,10 +71,46 @@ class ProcessingScreen(Screen):
 class FileListItem(ListItem):
     """A file list item with checkbox."""
 
-    def __init__(self, path, selected=True, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, *children, path, selected=True, **kwargs):
+        super().__init__(*children, **kwargs)
         self.path = path
         self.selected = selected
+
+
+class DirPickerScreen(Screen):
+    """Screen for browsing and selecting a directory."""
+
+    def __init__(self, start_path, on_select):
+        super().__init__()
+        self._start_path = start_path
+        self._on_select = on_select
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Label("Navigate the tree, then click 'Select Directory'.", id="picker-hint")
+        yield DirectoryTree(self._start_path, id="dir-tree")
+        with Horizontal(id="picker-actions"):
+            yield Button("Select Directory", id="btn-select-dir", variant="primary")
+            yield Button("Cancel", id="btn-cancel", variant="default")
+        yield Footer()
+
+    @on(Button.Pressed, "#btn-select-dir")
+    def on_select_dir(self):
+        tree = self.query_one("#dir-tree", DirectoryTree)
+        self._on_select(str(tree.path))
+        self.dismiss()
+
+    @on(Button.Pressed, "#btn-cancel")
+    def on_cancel(self):
+        self.dismiss()
+
+
+_EXIF_FIELD_COLUMNS = [
+    ["camera_model", "lens_model", "focal_length_35mm", "make", "body_serial_number", "lens_serial_number"],
+    ["aperture", "iso", "exposure_time", "exposure_bias", "metering_mode", "flash", "white_balance"],
+    ["datetime_original", "artist", "copyright", "software", "orientation", "image_unique_id"],
+]
+_EXIF_FIELD_COLUMN_MAP = {f: i for i, g in enumerate(_EXIF_FIELD_COLUMNS) for f in g}
 
 
 class MainScreen(Screen):
@@ -97,7 +135,10 @@ class MainScreen(Screen):
                             yield Button("Load", id="btn-load-dir", variant="default")
                         yield Label("", id="dir-status")
                         yield Label("Selected Images:", classes="section-label")
-                        yield ScrollableContainer(id="file-list-container")
+                        with Horizontal(id="file-select-actions"):
+                            yield Button("Select All", id="btn-select-all", variant="default")
+                            yield Button("Deselect All", id="btn-deselect-all", variant="default")
+                        yield ScrollableContainer(ListView(id="file-list"), id="file-list-container")
                     with Container(id="options-panel"):
                         yield Label("Output Directory:", classes="section-label")
                         yield Input(value=self._config.output_dir, id="output-dir", placeholder="Output directory...")
@@ -116,21 +157,34 @@ class MainScreen(Screen):
                     yield Input(value="255,255,255", id="border-color")
 
             with TabPane("EXIF", id="tab-exif"):
-                with Vertical():
-                    yield Label("Author Name:", classes="section-label")
-                    yield Input(value=self._config.author_name, id="author-name", placeholder="Enter author name...")
-                    yield Label("Text Position:", classes="section-label")
-                    yield Select([("Bottom", "bottom"), ("Top", "top"), ("Left", "left"), ("Right", "right")],
-                                 id="text-position", value="bottom")
-                    yield Label("Text Alignment:", classes="section-label")
-                    yield Select([("Left", "left"), ("Center", "center"), ("Right", "right")],
-                                 id="text-align", value="left")
-                    yield Label("Font Size:", classes="section-label")
-                    yield Input(value=str(self._config.exif.get("font_size", 24)), id="font-size")
-                    yield Label("Font Color (R,G,B):", classes="section-label")
-                    yield Input(value="0,0,0", id="font-color")
-                    yield Label("EXIF Fields:", classes="section-label")
-                    yield ScrollableContainer(id="exif-fields-container")
+                with Horizontal():
+                    with Vertical(classes="exif-form-col"):
+                        yield Label("Author Name:", classes="section-label")
+                        yield Input(value=self._config.author_name, id="author-name", placeholder="Enter author name...")
+                        yield Label("Text Position:", classes="section-label")
+                        yield Select([("Bottom", "bottom"), ("Top", "top"), ("Left", "left"), ("Right", "right")],
+                                     id="text-position", value="bottom")
+                        yield Label("Font Size:", classes="section-label")
+                        yield Input(value=str(self._config.exif.get("font_size", 24)), id="font-size")
+                    with Vertical(classes="exif-form-col"):
+                        yield Label("Text Alignment:", classes="section-label")
+                        yield Select([("Left", "left"), ("Center", "center"), ("Right", "right")],
+                                     id="text-align", value="left")
+                        yield Label("Font Color (R,G,B):", classes="section-label")
+                        yield Input(value="0,0,0", id="font-color")
+
+            with TabPane("Fields", id="tab-fields"):
+                with Vertical(id="fields-content"):
+                    with Horizontal():
+                        with Vertical(classes="exif-column"):
+                            yield Label("Camera & Lens", classes="column-header")
+                            yield Vertical(id="exif-col-0")
+                        with Vertical(classes="exif-column"):
+                            yield Label("Exposure", classes="column-header")
+                            yield Vertical(id="exif-col-1")
+                        with Vertical(classes="exif-column"):
+                            yield Label("Info & Meta", classes="column-header")
+                            yield Vertical(id="exif-col-2")
 
             with TabPane("Logos", id="tab-logos"):
                 with Vertical():
@@ -167,11 +221,13 @@ class MainScreen(Screen):
             bp = self.query_one("#border-preset", RadioSet)
             preset = self._config.border.get("preset", "medium")
             if self._config.border.get("use_custom"):
-                bp._selected = bp.query("#custom", RadioButton).first()
+                custom_btn = bp.query("#custom", RadioButton).first()
+                if custom_btn is not None:
+                    bp._selected = bp._nodes.index(custom_btn)
             else:
                 for btn in bp.query(RadioButton):
                     if btn.value == preset:
-                        bp._selected = btn
+                        bp._selected = bp._nodes.index(btn)
                         break
             bp.refresh()
         except Exception:
@@ -186,15 +242,25 @@ class MainScreen(Screen):
         bc = self._config.border.get("color", [255, 255, 255])
         self.query_one("#border-color", Input).value = f"{bc[0]},{bc[1]},{bc[2]}"
 
-        # EXIF fields
-        fields_container = self.query_one("#exif-fields-container", ScrollableContainer)
-        for child in list(fields_container.children):
-            child.remove()
+        # EXIF fields - distribute across 3 columns
+        col_containers = [self.query_one(f"#exif-col-{i}") for i in range(3)]
         enabled_fields = self._config.exif.get("fields", [])
-        for field_id in self._available_fields:
-            label = get_field_label(field_id)
-            cb = Checkbox(label, value=field_id in enabled_fields, id=f"field-{field_id}")
-            fields_container.mount(cb)
+        all_existing = {}
+        for col in col_containers:
+            for c in col.children:
+                if c.id and c.id.startswith("field-"):
+                    all_existing[c.id] = c
+        if all_existing:
+            for field_id in self._available_fields:
+                widget_id = f"field-{field_id}"
+                if widget_id in all_existing:
+                    all_existing[widget_id].value = field_id in enabled_fields
+        else:
+            for field_id in self._available_fields:
+                label = get_field_label(field_id)
+                cb = Checkbox(label, value=field_id in enabled_fields, id=f"field-{field_id}")
+                col_idx = _EXIF_FIELD_COLUMN_MAP.get(field_id, 0)
+                col_containers[col_idx].mount(cb)
 
         # Font color
         fc = self._config.exif.get("font_color", [0, 0, 0])
@@ -210,11 +276,12 @@ class MainScreen(Screen):
         # Border
         border = self._config.border
         bp = self.query_one("#border-preset", RadioSet)
-        if bp._selected:
-            if bp._selected.value == "custom":
+        if bp._selected is not None:
+            pressed = bp._nodes[bp._selected]
+            if pressed.value == "custom":
                 border["use_custom"] = True
             else:
-                border["preset"] = bp._selected.value
+                border["preset"] = pressed.value
                 border["use_custom"] = False
         cb_str = self.query_one("#custom-border", Input).value
         try:
@@ -268,39 +335,99 @@ class MainScreen(Screen):
 
         self._config.save()
 
+    @on(Button.Pressed, "#btn-browse-dir")
+    def on_browse_dir(self):
+        start = self.query_one("#input-dir", Input).value or os.path.expanduser("~")
+        if not os.path.isdir(start):
+            start = os.path.expanduser("~")
+        self.app.push_screen(DirPickerScreen(start, lambda path: self._set_input_dir(path)))
+
+    def _set_input_dir(self, path):
+        self.query_one("#input-dir", Input).value = path
+
+    @on(Button.Pressed, "#btn-browse-out")
+    def on_browse_out(self):
+        start = self.query_one("#output-dir", Input).value or os.path.expanduser("~")
+        if not os.path.isdir(start):
+            start = os.path.expanduser("~")
+        self.app.push_screen(DirPickerScreen(start, lambda path: self._set_output_dir(path)))
+
+    def _set_output_dir(self, path):
+        self.query_one("#output-dir", Input).value = path
+
     @on(Button.Pressed, "#btn-load-dir")
-    def on_load_dir(self):
+    async def on_load_dir(self):
         input_dir = self.query_one("#input-dir", Input).value
         if not input_dir or not os.path.isdir(input_dir):
             self.query_one("#dir-status", Label).update("Invalid directory!")
             return
         files = get_supported_images_from_dir(input_dir)
+        # Filter hidden files (safety net)
+        files = [f for f in files if not os.path.basename(f).startswith(".")]
         self._image_files = files
-        self.query_one("#dir-status", Label).update(f"Found {len(files)} image(s)")
 
-        # Update file list
-        container = self.query_one("#file-list-container", ScrollableContainer)
-        for child in list(container.children):
-            child.remove()
+        list_view = self.query_one("#file-list", ListView)
+        await list_view.clear()
         for f in files:
-            container.mount(ListItem(Label(os.path.basename(f))))
+            item = FileListItem(
+                Label(f"✓ {os.path.basename(f)}"),
+                path=f,
+                selected=True,
+            )
+            list_view.append(item)
+
+        self._update_selection_status()
+
+    def _update_selection_status(self):
+        list_view = self.query_one("#file-list", ListView)
+        selected = sum(1 for item in list_view.children
+                       if isinstance(item, FileListItem) and item.selected)
+        total = len(list_view.children)
+        self.query_one("#dir-status", Label).update(
+            f"{selected} of {total} image(s) selected"
+        )
+
+    @on(Button.Pressed, "#btn-select-all")
+    def on_select_all(self):
+        list_view = self.query_one("#file-list", ListView)
+        for item in list_view.children:
+            if isinstance(item, FileListItem) and not item.selected:
+                item.selected = True
+                label = item.query_one(Label)
+                label.update(f"✓ {os.path.basename(item.path)}")
+        self._update_selection_status()
+
+    @on(Button.Pressed, "#btn-deselect-all")
+    def on_deselect_all(self):
+        list_view = self.query_one("#file-list", ListView)
+        for item in list_view.children:
+            if isinstance(item, FileListItem) and item.selected:
+                item.selected = False
+                label = item.query_one(Label)
+                label.update(f"✗ {os.path.basename(item.path)}")
+        self._update_selection_status()
+
+    @on(ListView.Selected, "#file-list")
+    def on_file_selected(self, event):
+        item = event.item
+        if isinstance(item, FileListItem):
+            item.selected = not item.selected
+            label = item.query_one(Label)
+            basename = os.path.basename(item.path)
+            label.update(f"{'✓' if item.selected else '✗'} {basename}")
+            self._update_selection_status()
 
     @on(Button.Pressed, "#btn-process")
     def on_process(self):
         self._sync_config_from_ui()
 
-        # Gather images
-        input_dir = self._config.input_dir
-        if input_dir and os.path.isdir(input_dir):
-            images = get_supported_images_from_dir(input_dir)
-        elif self._image_files:
-            images = self._image_files
-        else:
-            self.notify("No images to process!", severity="error")
-            return
+        # Gather selected images from the file list
+        list_view = self.query_one("#file-list", ListView)
+        images = [item.path for item in list_view.children
+                  if isinstance(item, FileListItem) and item.selected]
 
         if not images:
-            self.notify("No images found!", severity="error")
+            self.notify("No images selected! Load a directory and select images first.", severity="error")
             return
 
         self.app.push_screen(ProcessingScreen(images, self._config))
@@ -338,12 +465,26 @@ class PyBorderEXIFTUI(App):
         width: 60%;
     }
 
+    #file-select-actions {
+        margin-bottom: 1;
+    }
+
+    #file-select-actions Button {
+        margin-right: 1;
+    }
+
     #file-list-container {
         height: 15;
     }
 
-    #exif-fields-container {
-        height: 12;
+    .exif-column {
+        width: 1fr;
+    }
+
+    .column-header {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
     }
 
     .logo-row {
@@ -362,6 +503,11 @@ class PyBorderEXIFTUI(App):
 
     TabPane {
         padding: 1;
+    }
+
+    .exif-form-col {
+        width: 1fr;
+        margin-right: 1;
     }
 
     #processing-container {
@@ -383,6 +529,22 @@ class PyBorderEXIFTUI(App):
     #current-file {
         text-align: center;
         margin-top: 1;
+    }
+
+    #picker-hint {
+        text-align: center;
+        margin: 1 0;
+        color: $text-muted;
+    }
+
+    #picker-actions {
+        dock: bottom;
+        height: 3;
+        align: center middle;
+    }
+
+    #picker-actions Button {
+        margin: 0 1;
     }
     """
 
