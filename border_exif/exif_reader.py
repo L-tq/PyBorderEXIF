@@ -125,19 +125,23 @@ def _extract_pil_exif(image_path):
     """Extract EXIF from JPEG/TIFF using Pillow. Returns flat dict of {name: raw_value}."""
     try:
         img = Image.open(image_path)
-        exif_data = img.getexif()
-        if not exif_data:
+        exif = img.getexif()
+        if not exif:
             return {}
         result = {}
-        for tag_id, value in exif_data.items():
-            name = _raw_tag_id_to_name(tag_id)
-            # Handle IFD sub-dicts
-            if isinstance(value, dict):
-                for sub_id, sub_val in value.items():
-                    sub_name = _raw_tag_id_to_name(sub_id)
-                    result[f"{name}_{sub_name}"] = sub_val
-            else:
-                result[name] = value
+        # Top-level IFD0 tags
+        for tag_id, value in exif.items():
+            result[_raw_tag_id_to_name(tag_id)] = value
+        # Read sub-IFDs (ExifIFD, GPSInfo, etc.)
+        sub_ifd_tags = {0x8769, 0x8825, 0xA005}
+        for ifd_tag in sub_ifd_tags:
+            try:
+                sub_ifd = exif.get_ifd(ifd_tag)
+                if sub_ifd:
+                    for tag_id, value in sub_ifd.items():
+                        result[_raw_tag_id_to_name(tag_id)] = value
+            except Exception:
+                pass
         return result
     except Exception:
         return {}
@@ -338,11 +342,34 @@ def _normalize_exif(raw_exif):
     return result
 
 
-def exif_to_display_lines(exif_data, fields, author_name=""):
+def exif_to_display_lines(exif_data, fields, author_name="", field_layout=None):
     """
     Convert extracted EXIF data into display text lines.
+    If field_layout is provided, it determines the order of fields and where
+    line breaks occur (using "__break__" markers).
+    Otherwise fields are rendered as a simple list, one per line.
+
     Returns list of strings ready for rendering.
     """
+    if field_layout:
+        lines = []
+        if author_name:
+            lines.append(author_name)
+        current_line_parts = []
+        for item in field_layout:
+            if item == "__break__":
+                if current_line_parts:
+                    lines.append("  ".join(current_line_parts))
+                    current_line_parts = []
+            else:
+                value = exif_data.get(item)
+                if value:
+                    label = get_field_label(item)
+                    current_line_parts.append(f"{label}: {value}")
+        if current_line_parts:
+            lines.append("  ".join(current_line_parts))
+        return lines
+
     lines = []
     if author_name:
         lines.append(author_name)

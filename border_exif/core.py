@@ -4,6 +4,7 @@ import os
 import io
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
+from .config import find_font_file
 from .exif_reader import extract_exif, exif_to_display_lines, get_field_label
 from .logo import place_logos
 
@@ -70,18 +71,24 @@ def add_border(image, border_pixels, color=(255, 255, 255)):
     return bordered
 
 
-def _load_font(size):
+def _load_font(size, font_family=None):
     """Load a font at the given size. Falls back to default."""
+    if font_family:
+        font_path = find_font_file(font_family)
+        if font_path and os.path.exists(font_path):
+            try:
+                return ImageFont.truetype(font_path, size)
+            except Exception:
+                pass
+
     try:
         font_paths = [
-            # English fonts
             "C:\\Windows\\Fonts\\roboto.ttf",
             "C:\\Windows\\Fonts\\arial.ttf",
             "/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf",
             "/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf",
             "/System/Library/Fonts/Roboto.ttf",
             "/System/Library/Fonts/Helvetica.ttc",
-            # Chinese fonts - 思源黑体 (Source Han Sans / Noto Sans CJK)
             "C:\\Windows\\Fonts\\notosanscjk.ttc",
             "C:\\Windows\\Fonts\\msyh.ttc",
             "C:\\Windows\\Fonts\\msyhbd.ttc",
@@ -274,12 +281,12 @@ def add_exif_text(image, exif_data, exif_config):
 
 
 def render_text_on_border(image, lines, font_size, font_color, border_pixels,
-                          position, alignment, margin, line_spacing):
+                          position, alignment, margin, line_spacing, font_family=None):
     """Render text lines on the border area of an already-bordered image."""
     if not lines:
         return image
 
-    font = _load_font(font_size)
+    font = _load_font(font_size, font_family)
     vert_align = _position_alignment_vertical(position, alignment)
 
     return _render_text_block(
@@ -288,7 +295,7 @@ def render_text_on_border(image, lines, font_size, font_color, border_pixels,
     )
 
 
-def process_image(image_path, config, output_path=None):
+def process_image(image_path, config, output_path=None, text_lines=None):
     """
     Full image processing pipeline.
 
@@ -296,6 +303,7 @@ def process_image(image_path, config, output_path=None):
         image_path: Path to source image
         config: Config object
         output_path: Optional output path. If None, generates from input name.
+        text_lines: Optional list of text lines to render (overrides EXIF extraction).
 
     Returns:
         Path to saved output image
@@ -304,32 +312,40 @@ def process_image(image_path, config, output_path=None):
     img = load_image(image_path)
 
     # 2. Extract EXIF (do this before adding border in case RAW processing loses it)
-    exif_data = {}
     exif_cfg = config.exif
-    if exif_cfg.get("enabled", True):
+    if text_lines is None and exif_cfg.get("enabled", True):
         exif_data = extract_exif(image_path)
+    else:
+        exif_data = {}
 
     # 3. Add border
-    border_px = config.get_border_pixels()
+    border_px = config.get_border_pixels(img.width, img.height)
     border_color = tuple(config.border.get("color", [255, 255, 255]))
     img = add_border(img, border_px, border_color)
 
     # 4. Add EXIF text
     if exif_cfg.get("enabled", True):
-        fields = exif_cfg.get("fields", [])
-        font_size = exif_cfg.get("font_size", 24)
-        font_color = exif_cfg.get("font_color", [0, 0, 0])
-        position = exif_cfg.get("position", "bottom")
-        alignment = exif_cfg.get("alignment", "left")
-        margin = exif_cfg.get("margin", 10)
-        line_spacing = exif_cfg.get("line_spacing", 4)
-        author = config.author_name
+        if text_lines is not None:
+            lines = text_lines
+        else:
+            fields = exif_cfg.get("fields", [])
+            field_layout = exif_cfg.get("field_layout")
+            author = config.author_name
+            lines = exif_to_display_lines(exif_data, fields, author, field_layout)
 
-        lines = exif_to_display_lines(exif_data, fields, author)
-        img = render_text_on_border(
-            img, lines, font_size, font_color, border_px,
-            position, alignment, margin, line_spacing
-        )
+        if lines:
+            font_size = exif_cfg.get("font_size", 24)
+            font_color = exif_cfg.get("font_color", [0, 0, 0])
+            font_family = exif_cfg.get("font_family")
+            position = exif_cfg.get("position", "bottom")
+            alignment = exif_cfg.get("alignment", "left")
+            margin = exif_cfg.get("margin", 10)
+            line_spacing = exif_cfg.get("line_spacing", 4)
+
+            img = render_text_on_border(
+                img, lines, font_size, font_color, border_px,
+                position, alignment, margin, line_spacing, font_family
+            )
 
     # 5. Add logos
     logos = config.logos

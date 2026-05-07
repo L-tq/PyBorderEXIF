@@ -1,4 +1,4 @@
-author_name: 派大扔
+author_name: Test
 border:
   color:
   - 255
@@ -9,24 +9,30 @@ border:
     left: 10
     right: 50
     top: 10
+  fixed_ratio:
+    a: 300
+    auto_param: b
+    b: 50
+    c: 700
   preset: small
   use_custom: false
+  use_fixed_ratio: true
 exif:
   alignment: left
   author_name: Test Photographer
   enabled: true
+  field_layout: null
   fields:
-  - body_serial_number
   - focal_length_35mm
+  - aperture
   - iso
-  - lens_model
-  - software
-  - white_balance
+  - exposure_time
   font_color:
   - 0
   - 0
   - 0
-  font_size: 24
+  font_family: Roboto Regular
+  font_size: 36
   line_spacing: 4
   margin: 10
   position: bottom
@@ -61,4 +67,4 @@ output:
   format: JPEG
   jpeg_quality: 95
   suffix: _bordered
-output_dir: /home/scd/Downloads
+output_dir: /tmp

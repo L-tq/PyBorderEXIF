@@ -18,7 +18,52 @@ DEFAULT_METADATA_FIELDS = [
     "focal_length_35mm",
     "aperture",
     "iso",
+    "shutter_speed"
 ]
+
+DEFAULT_FONT_FAMILY = "Roboto Regular"
+
+FONT_FAMILIES = {
+    "Roboto Regular": ["Roboto-Regular.ttf"],
+    "Roboto Italic": ["Roboto-Italic.ttf"],
+    "Roboto Bold": ["Roboto-Bold.ttf"],
+    "Roboto Bold Italic": ["Roboto-BoldItalic.ttf"],
+    "Roboto Thin": ["Roboto-Thin.ttf"],
+    "Roboto Thin Italic": ["Roboto-ThinItalic.ttf"],
+    "Roboto Light": ["Roboto-Light.ttf"],
+    "Roboto Light Italic": ["Roboto-LightItalic.ttf"],
+    "Roboto Medium": ["Roboto-Medium.ttf"],
+    "Roboto Medium Italic": ["Roboto-MediumItalic.ttf"],
+    "思源黑体 Regular": ["NotoSansCJK-Regular.ttc", "SourceHanSansSC-Regular.otf"],
+    "思源黑体 Bold": ["NotoSansCJK-Bold.ttc", "SourceHanSansSC-Bold.otf"],
+}
+
+FONT_SEARCH_PATHS = [
+    "/usr/share/fonts/truetype/roboto",
+    "/usr/share/fonts/truetype",
+    "/usr/share/fonts/opentype",
+    "/usr/share/fonts",
+    "/usr/local/share/fonts",
+    os.path.expanduser("~/.fonts"),
+    "C:\\Windows\\Fonts",
+    "/System/Library/Fonts",
+]
+
+BREAK_MARKER = "__break__"
+
+
+def find_font_file(font_family):
+    """Find the font file path for a given font family name."""
+    candidates = FONT_FAMILIES.get(font_family, [])
+    for filename in candidates:
+        for search_path in FONT_SEARCH_PATHS:
+            if not os.path.isdir(search_path):
+                continue
+            for root, dirs, files in os.walk(search_path):
+                for f in files:
+                    if f.lower() == filename.lower():
+                        return os.path.join(root, f)
+    return None
 
 DEFAULT_CONFIG = {
     "input_dir": os.path.expanduser("~/Pictures"),
@@ -30,12 +75,16 @@ DEFAULT_CONFIG = {
         "custom": {"top": 0, "bottom": 0, "left": 0, "right": 0},
         "color": [255, 255, 255],
         "use_custom": False,
+        "use_fixed_ratio": False,
+        "fixed_ratio": {"a": 50, "b": 50, "c": 50, "auto_param": "c"},
     },
     "exif": {
         "enabled": True,
         "fields": DEFAULT_METADATA_FIELDS[:],
         "font_size": 24,
         "font_color": [0, 0, 0],
+        "font_family": DEFAULT_FONT_FAMILY,
+        "field_layout": None,
         "position": "bottom",
         "alignment": "left",
         "margin": 10,
@@ -179,13 +228,40 @@ class Config:
         self._data["output"] = value
         self.save()
 
-    def get_border_pixels(self):
-        """Return {top, bottom, left, right} pixel values for the current border config."""
+    def get_border_pixels(self, img_width=None, img_height=None):
+        """Return {top, bottom, left, right} pixel values for the current border config.
+
+        If use_fixed_ratio is True, img_width and img_height are required to
+        compute the auto-calculated parameter from the aspect-ratio constraint:
+            2*a*H = W*(b+c)   where a=left=right, b=top, c=bottom
+        """
         b = self.border
+        if b.get("use_fixed_ratio"):
+            return self._compute_fixed_ratio_border(img_width, img_height)
         if b.get("use_custom"):
             return dict(b["custom"])
         preset_name = b.get("preset", "medium")
         return dict(BORDER_PRESETS.get(preset_name, BORDER_PRESETS["medium"]))
+
+    def _compute_fixed_ratio_border(self, W, H):
+        """Compute border pixels from the fixed-ratio constraint 2*a*H = W*(b+c)."""
+        fr = self.border.get("fixed_ratio", {})
+        a = fr.get("a", 0)
+        b = fr.get("b", 0)
+        c_val = fr.get("c", 0)
+        auto = fr.get("auto_param", "c")
+
+        if W is None or H is None or W <= 0 or H <= 0:
+            return {"top": b, "bottom": c_val, "left": a, "right": a}
+
+        if auto == "a":
+            a = max(0, int(W * (b + c_val) / (2 * H)))
+        elif auto == "b":
+            b = max(0, int(2 * a * H / W - c_val))
+        else:  # auto == "c"
+            c_val = max(0, int(2 * a * H / W - b))
+
+        return {"top": b, "bottom": c_val, "left": a, "right": a}
 
     def get_all(self):
         return dict(self._data)

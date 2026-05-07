@@ -5,9 +5,13 @@ import os
 import sys
 import asyncio
 
-from border_exif.config import Config, BORDER_PRESETS
+from border_exif.config import (
+    Config, BORDER_PRESETS, FONT_FAMILIES, DEFAULT_FONT_FAMILY, BREAK_MARKER,
+)
 from border_exif.core import process_images, get_supported_images_from_dir
-from border_exif.exif_reader import get_all_field_names, get_field_label
+from border_exif.exif_reader import (
+    get_all_field_names, get_field_label, extract_exif, exif_to_display_lines,
+)
 
 try:
     from textual.app import App, ComposeResult
@@ -15,7 +19,7 @@ try:
     from textual.widgets import (
         Header, Footer, Button, Label, Input, Select, Switch,
         Static, DirectoryTree, ListView, ListItem, ProgressBar,
-        Checkbox, RadioSet, RadioButton, TabbedContent, TabPane,
+        Checkbox, RadioSet, RadioButton, TabbedContent, TabPane, TextArea,
     )
     from textual.screen import Screen
     from textual import on
@@ -29,13 +33,113 @@ if not HAS_TEXTUAL:
     sys.exit(1)
 
 
-class ProcessingScreen(Screen):
-    """Screen shown during batch processing."""
+class PreviewItem(ListItem):
+    """An item in the preview image list."""
+
+    def __init__(self, *children, path, **kwargs):
+        super().__init__(*children, **kwargs)
+        self.path = path
+
+
+class PreviewScreen(Screen):
+    """Screen to preview and edit EXIF text per image before processing."""
 
     def __init__(self, image_paths, config):
         super().__init__()
+        self._image_paths = list(image_paths)
+        self._config = config
+        self._per_image_lines = {}
+        self._current_edit_path = None
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Horizontal(id="preview-main"):
+            with Vertical(id="preview-left"):
+                yield Label("Images:", classes="section-label")
+                yield ListView(id="preview-image-list")
+            with Vertical(id="preview-right"):
+                yield Label("Text Lines (edit as needed):", classes="section-label")
+                yield TextArea(id="preview-text", language=None)
+        with Horizontal(id="preview-actions"):
+            yield Label("", id="preview-status")
+            yield Button("Process All", id="btn-process-all", variant="primary")
+            yield Button("Cancel", id="btn-cancel-preview", variant="default")
+        yield Footer()
+
+    def on_mount(self):
+        self._load_exif_data()
+
+    @on(ListView.Selected, "#preview-image-list")
+    def on_image_select(self, event):
+        if self._current_edit_path is not None:
+            self._save_current_text()
+        if isinstance(event.item, PreviewItem):
+            self._current_edit_path = event.item.path
+            lines = self._per_image_lines.get(event.item.path, [])
+            text_area = self.query_one("#preview-text", TextArea)
+            text_area.text = "\n".join(lines)
+
+    def _save_current_text(self):
+        if self._current_edit_path is None:
+            return
+        text_area = self.query_one("#preview-text", TextArea)
+        text = text_area.text
+        lines = text.split("\n")
+        if lines == [""]:
+            lines = []
+        self._per_image_lines[self._current_edit_path] = lines
+
+    def _load_exif_data(self):
+        exif_cfg = self._config.exif
+        fields = exif_cfg.get("fields", [])
+        field_layout = exif_cfg.get("field_layout")
+        author = self._config.author_name
+        list_view = self.query_one("#preview-image-list", ListView)
+        status = self.query_one("#preview-status", Label)
+
+        for i, path in enumerate(self._image_paths):
+            try:
+                exif_data = extract_exif(path)
+                lines = exif_to_display_lines(exif_data, fields, author, field_layout)
+            except Exception:
+                lines = [author] if author else []
+            self._per_image_lines[path] = lines
+            item = PreviewItem(
+                Label(os.path.basename(path)),
+                path=path,
+            )
+            list_view.append(item)
+            status.update(f"Loaded {i + 1}/{len(self._image_paths)}")
+
+        if self._image_paths:
+            list_view.index = 0
+            # Trigger initial text display
+            first_item = list_view.children[0]
+            if isinstance(first_item, PreviewItem):
+                self._current_edit_path = first_item.path
+                lines = self._per_image_lines.get(first_item.path, [])
+                self.query_one("#preview-text", TextArea).text = "\n".join(lines)
+
+        status.update(f"{len(self._image_paths)} image(s) — edit text, then Process All")
+
+    @on(Button.Pressed, "#btn-process-all")
+    def on_process_all(self):
+        self._save_current_text()
+        self.dismiss(dict(self._per_image_lines))
+
+    @on(Button.Pressed, "#btn-cancel-preview")
+    def on_cancel(self):
+        self.dismiss(None)
+
+
+class ProcessingScreen(Screen):
+    """Screen shown during batch processing."""
+
+    def __init__(self, image_paths, config, per_image_lines=None):
+        super().__init__()
         self._images = image_paths
         self._config = config
+        self._per_image_lines = per_image_lines or {}
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -60,7 +164,8 @@ class ProcessingScreen(Screen):
         for i, path in enumerate(self._images):
             current_file.update(f"[{i+1}/{total}] {os.path.basename(path)}")
             try:
-                await asyncio.to_thread(process_image, path, self._config)
+                lines = self._per_image_lines.get(path)
+                await asyncio.to_thread(process_image, path, self._config, text_lines=lines)
             except Exception as e:
                 current_file.update(f"[{i+1}/{total}] FAILED: {os.path.basename(path)} - {e}")
             progress.advance(1)
@@ -75,6 +180,14 @@ class FileListItem(ListItem):
         super().__init__(*children, **kwargs)
         self.path = path
         self.selected = selected
+
+
+class LayoutItem(ListItem):
+    """An item in the field layout list."""
+
+    def __init__(self, *children, field_id, **kwargs):
+        super().__init__(*children, **kwargs)
+        self.field_id = field_id
 
 
 class DirPickerScreen(Screen):
@@ -103,14 +216,6 @@ class DirPickerScreen(Screen):
     @on(Button.Pressed, "#btn-cancel")
     def on_cancel(self):
         self.dismiss()
-
-
-_EXIF_FIELD_COLUMNS = [
-    ["camera_model", "lens_model", "focal_length_35mm", "make", "body_serial_number", "lens_serial_number"],
-    ["aperture", "iso", "exposure_time", "exposure_bias", "metering_mode", "flash", "white_balance"],
-    ["datetime_original", "artist", "copyright", "software", "orientation", "image_unique_id"],
-]
-_EXIF_FIELD_COLUMN_MAP = {f: i for i, g in enumerate(_EXIF_FIELD_COLUMNS) for f in g}
 
 
 class MainScreen(Screen):
@@ -153,6 +258,26 @@ class MainScreen(Screen):
                         yield RadioButton("Custom", value="custom")
                     yield Label("Custom Border (top,bottom,left,right):", classes="section-label")
                     yield Input(placeholder="e.g., 30,80,30,30", id="custom-border")
+                    yield Label("")
+                    yield Label("Fixed Aspect Ratio", classes="section-label")
+                    with Horizontal(id="fixed-ratio-toggle-row"):
+                        yield Switch(value=False, id="fixed-ratio-enable")
+                        yield Label("Keep original aspect ratio when adding borders")
+                    with Horizontal(id="fixed-ratio-params"):
+                        with Vertical(classes="fr-param"):
+                            yield Label("a (Left/Right)")
+                            yield Input(value="50", id="fr-a", placeholder="px")
+                        with Vertical(classes="fr-param"):
+                            yield Label("b (Top)")
+                            yield Input(value="50", id="fr-b", placeholder="px")
+                        with Vertical(classes="fr-param"):
+                            yield Label("c (Bottom)")
+                            yield Input(value="50", id="fr-c", placeholder="px")
+                        with Vertical(classes="fr-param"):
+                            yield Label("Auto (computed)")
+                            yield Select([("a (L/R)", "a"), ("b (Top)", "b"), ("c (Bottom)", "c")],
+                                        id="fr-auto-param", value="c")
+                    yield Label("")
                     yield Label("Border Color (R,G,B):", classes="section-label")
                     yield Input(value="255,255,255", id="border-color")
 
@@ -166,25 +291,37 @@ class MainScreen(Screen):
                                      id="text-position", value="bottom")
                         yield Label("Font Size:", classes="section-label")
                         yield Input(value=str(self._config.exif.get("font_size", 24)), id="font-size")
+                        yield Label("Font Family:", classes="section-label")
+                        font_opts = [(name, name) for name in FONT_FAMILIES.keys()]
+                        yield Select(font_opts, id="font-family", value=DEFAULT_FONT_FAMILY)
                     with Vertical(classes="exif-form-col"):
                         yield Label("Text Alignment:", classes="section-label")
                         yield Select([("Left", "left"), ("Center", "center"), ("Right", "right")],
                                      id="text-align", value="left")
                         yield Label("Font Color (R,G,B):", classes="section-label")
                         yield Input(value="0,0,0", id="font-color")
+                        yield Label("Margin (px):", classes="section-label")
+                        yield Input(value=str(self._config.exif.get("margin", 10)), id="exif-margin")
+                        yield Label("Line Spacing (px):", classes="section-label")
+                        yield Input(value=str(self._config.exif.get("line_spacing", 4)), id="exif-line-spacing")
 
-            with TabPane("Fields", id="tab-fields"):
-                with Vertical(id="fields-content"):
-                    with Horizontal():
-                        with Vertical(classes="exif-column"):
-                            yield Label("Camera & Lens", classes="column-header")
-                            yield Vertical(id="exif-col-0")
-                        with Vertical(classes="exif-column"):
-                            yield Label("Exposure", classes="column-header")
-                            yield Vertical(id="exif-col-1")
-                        with Vertical(classes="exif-column"):
-                            yield Label("Info & Meta", classes="column-header")
-                            yield Vertical(id="exif-col-2")
+            with TabPane("Field Layout", id="tab-fields"):
+                with Horizontal(id="fields-content"):
+                    with Vertical(id="layout-list-panel"):
+                        yield Label("Layout (order & line breaks):", classes="section-label")
+                        yield ListView(id="layout-list")
+                    with Vertical(id="layout-controls"):
+                        yield Label("Actions:", classes="section-label")
+                        yield Button("▲ Up", id="btn-layout-up", variant="default")
+                        yield Button("▼ Down", id="btn-layout-down", variant="default")
+                        yield Label("")
+                        yield Button("↩ Insert Break", id="btn-layout-break", variant="default")
+                        yield Button("✕ Remove", id="btn-layout-remove", variant="default")
+                        yield Label("")
+                        yield Label("Available Fields:", classes="section-label")
+                        yield Select([], id="layout-available", prompt="Add field...")
+                        yield Label("")
+                        yield Button("Reset to Default", id="btn-layout-reset", variant="default")
 
             with TabPane("Logos", id="tab-logos"):
                 with Vertical():
@@ -214,6 +351,101 @@ class MainScreen(Screen):
     def on_mount(self):
         self._refresh_state()
 
+    def _get_layout_as_list(self):
+        """Return current layout from the layout ListView."""
+        layout = []
+        list_view = self.query_one("#layout-list", ListView)
+        for item in list_view.children:
+            if isinstance(item, LayoutItem):
+                layout.append(item.field_id)
+        return layout
+
+    def _rebuild_layout_list(self, layout):
+        """Rebuild the layout ListView from a layout list."""
+        list_view = self.query_one("#layout-list", ListView)
+        list_view.clear()
+        for item in layout:
+            if item == BREAK_MARKER:
+                display = "——— Line Break ———"
+            else:
+                display = get_field_label(item)
+            list_view.append(LayoutItem(Label(display), field_id=item))
+
+    def _get_layout_field_ids(self):
+        ids = set()
+        list_view = self.query_one("#layout-list", ListView)
+        for item in list_view.children:
+            if isinstance(item, LayoutItem) and item.field_id != BREAK_MARKER:
+                ids.add(item.field_id)
+        return ids
+
+    def _refresh_available_fields_combo(self):
+        """Refresh the available fields Select with fields not yet in layout."""
+        in_layout = self._get_layout_field_ids()
+        available = [f for f in self._available_fields if f not in in_layout]
+        opts = [(get_field_label(f), f) for f in available]
+        sel = self.query_one("#layout-available", Select)
+        sel.set_options(opts)
+
+    @on(Button.Pressed, "#btn-layout-up")
+    def on_layout_up(self):
+        list_view = self.query_one("#layout-list", ListView)
+        if list_view.index is None or list_view.index == 0:
+            return
+        idx = list_view.index
+        layout = self._get_layout_as_list()
+        layout.insert(idx - 1, layout.pop(idx))
+        self._rebuild_layout_list(layout)
+        list_view.index = idx - 1
+
+    @on(Button.Pressed, "#btn-layout-down")
+    def on_layout_down(self):
+        list_view = self.query_one("#layout-list", ListView)
+        if list_view.index is None or list_view.index >= len(list_view.children) - 1:
+            return
+        idx = list_view.index
+        layout = self._get_layout_as_list()
+        layout.insert(idx + 1, layout.pop(idx))
+        self._rebuild_layout_list(layout)
+        list_view.index = idx + 1
+
+    @on(Button.Pressed, "#btn-layout-break")
+    def on_layout_break(self):
+        list_view = self.query_one("#layout-list", ListView)
+        item = LayoutItem(Label("——— Line Break ———"), field_id=BREAK_MARKER)
+        if list_view.index is not None:
+            list_view.mount(item, after=list_view.index)
+        else:
+            list_view.append(item)
+
+    @on(Button.Pressed, "#btn-layout-remove")
+    def on_layout_remove(self):
+        list_view = self.query_one("#layout-list", ListView)
+        if list_view.index is not None:
+            list_view.pop(list_view.index)
+        self._refresh_available_fields_combo()
+
+    @on(Select.Changed, "#layout-available")
+    def on_layout_add_field(self, event):
+        if not event.value or event.value in (Select.BLANK, Select.NULL):
+            return
+        field_id = event.value
+        display = get_field_label(field_id)
+        item = LayoutItem(Label(display), field_id=field_id)
+        list_view = self.query_one("#layout-list", ListView)
+        if list_view.index is not None:
+            list_view.mount(item, after=list_view.index)
+        else:
+            list_view.append(item)
+        self.query_one("#layout-available", Select).clear()
+        self._refresh_available_fields_combo()
+
+    @on(Button.Pressed, "#btn-layout-reset")
+    def on_layout_reset(self):
+        from border_exif.config import DEFAULT_METADATA_FIELDS
+        self._rebuild_layout_list(DEFAULT_METADATA_FIELDS)
+        self._refresh_available_fields_combo()
+
     def _refresh_state(self):
         """Refresh UI state from config."""
         # Border tab
@@ -238,33 +470,44 @@ class MainScreen(Screen):
         cbi = self.query_one("#custom-border", Input)
         cbi.value = f"{cb.get('top',0)},{cb.get('bottom',0)},{cb.get('left',0)},{cb.get('right',0)}"
 
+        # Fixed ratio
+        self.query_one("#fixed-ratio-enable", Switch).value = self._config.border.get("use_fixed_ratio", False)
+        fr = self._config.border.get("fixed_ratio", {})
+        self.query_one("#fr-a", Input).value = str(fr.get("a", 50))
+        self.query_one("#fr-b", Input).value = str(fr.get("b", 50))
+        self.query_one("#fr-c", Input).value = str(fr.get("c", 50))
+        self.query_one("#fr-auto-param", Select).value = fr.get("auto_param", "c")
+        self._update_fixed_ratio_inputs()
+
         # Border color
         bc = self._config.border.get("color", [255, 255, 255])
         self.query_one("#border-color", Input).value = f"{bc[0]},{bc[1]},{bc[2]}"
 
-        # EXIF fields - distribute across 3 columns
-        col_containers = [self.query_one(f"#exif-col-{i}") for i in range(3)]
-        enabled_fields = self._config.exif.get("fields", [])
-        all_existing = {}
-        for col in col_containers:
-            for c in col.children:
-                if c.id and c.id.startswith("field-"):
-                    all_existing[c.id] = c
-        if all_existing:
-            for field_id in self._available_fields:
-                widget_id = f"field-{field_id}"
-                if widget_id in all_existing:
-                    all_existing[widget_id].value = field_id in enabled_fields
-        else:
-            for field_id in self._available_fields:
-                label = get_field_label(field_id)
-                cb = Checkbox(label, value=field_id in enabled_fields, id=f"field-{field_id}")
-                col_idx = _EXIF_FIELD_COLUMN_MAP.get(field_id, 0)
-                col_containers[col_idx].mount(cb)
+        # EXIF fields - rebuild layout list only on first mount
+        list_view = self.query_one("#layout-list", ListView)
+        if len(list_view.children) == 0:
+            field_layout = self._config.exif.get("field_layout")
+            if field_layout:
+                self._rebuild_layout_list(field_layout)
+            else:
+                enabled_fields = self._config.exif.get("fields", [])
+                self._rebuild_layout_list(enabled_fields)
+            self._refresh_available_fields_combo()
 
         # Font color
         fc = self._config.exif.get("font_color", [0, 0, 0])
         self.query_one("#font-color", Input).value = f"{fc[0]},{fc[1]},{fc[2]}"
+
+        # Font family
+        ff = self._config.exif.get("font_family", DEFAULT_FONT_FAMILY)
+        try:
+            self.query_one("#font-family", Select).value = ff
+        except Exception:
+            pass
+
+        # Margin and line spacing
+        self.query_one("#exif-margin", Input).value = str(self._config.exif.get("margin", 10))
+        self.query_one("#exif-line-spacing", Input).value = str(self._config.exif.get("line_spacing", 4))
 
     def _sync_config_from_ui(self):
         """Save current UI state into config object."""
@@ -294,6 +537,25 @@ class MainScreen(Screen):
             border["color"] = [int(x) for x in self.query_one("#border-color", Input).value.split(",")]
         except ValueError:
             pass
+
+        # Fixed ratio
+        border["use_fixed_ratio"] = self.query_one("#fixed-ratio-enable", Switch).value
+        fr = border.get("fixed_ratio", {})
+        try:
+            fr["a"] = int(self.query_one("#fr-a", Input).value)
+        except ValueError:
+            pass
+        try:
+            fr["b"] = int(self.query_one("#fr-b", Input).value)
+        except ValueError:
+            pass
+        try:
+            fr["c"] = int(self.query_one("#fr-c", Input).value)
+        except ValueError:
+            pass
+        fr["auto_param"] = self.query_one("#fr-auto-param", Select).value
+        border["fixed_ratio"] = fr
+
         self._config.border = border
 
         # EXIF
@@ -304,17 +566,23 @@ class MainScreen(Screen):
             exif["font_size"] = int(self.query_one("#font-size", Input).value)
         except ValueError:
             pass
+        exif["font_family"] = self.query_one("#font-family", Select).value
         try:
             exif["font_color"] = [int(x) for x in self.query_one("#font-color", Input).value.split(",")]
         except ValueError:
             pass
-        # Gather enabled fields
-        enabled = []
-        for field_id in self._available_fields:
-            cb = self.query_one(f"#field-{field_id}", Checkbox)
-            if cb.value:
-                enabled.append(field_id)
-        exif["fields"] = enabled
+        try:
+            exif["margin"] = int(self.query_one("#exif-margin", Input).value)
+        except ValueError:
+            pass
+        try:
+            exif["line_spacing"] = int(self.query_one("#exif-line-spacing", Input).value)
+        except ValueError:
+            pass
+        # Gather field layout
+        layout = self._get_layout_as_list()
+        exif["field_layout"] = layout
+        exif["fields"] = [item for item in layout if item != BREAK_MARKER]
         self._config.exif = exif
 
         # Logos
@@ -378,6 +646,26 @@ class MainScreen(Screen):
 
         self._update_selection_status()
 
+    def _update_fixed_ratio_inputs(self):
+        """Disable the input for the auto-calculated parameter."""
+        auto = self.query_one("#fr-auto-param", Select).value
+        for param_id in ("#fr-a", "#fr-b", "#fr-c"):
+            inp = self.query_one(param_id, Input)
+            if param_id == f"#fr-{auto}":
+                inp.disabled = True
+                inp.add_class("fr-auto-disabled")
+            else:
+                inp.disabled = False
+                inp.remove_class("fr-auto-disabled")
+
+    @on(Switch.Changed, "#fixed-ratio-enable")
+    def on_fixed_ratio_toggled(self):
+        self._update_fixed_ratio_inputs()
+
+    @on(Select.Changed, "#fr-auto-param")
+    def on_fixed_ratio_auto_changed(self):
+        self._update_fixed_ratio_inputs()
+
     def _update_selection_status(self):
         list_view = self.query_one("#file-list", ListView)
         selected = sum(1 for item in list_view.children
@@ -430,7 +718,12 @@ class MainScreen(Screen):
             self.notify("No images selected! Load a directory and select images first.", severity="error")
             return
 
-        self.app.push_screen(ProcessingScreen(images, self._config))
+        # Show preview screen, then process on dismiss
+        def on_preview_done(result):
+            if result is not None:
+                self.app.push_screen(ProcessingScreen(images, self._config, per_image_lines=result))
+
+        self.app.push_screen(PreviewScreen(images, self._config), callback=on_preview_done)
 
     @on(Button.Pressed, "#btn-refresh")
     def on_refresh(self):
@@ -545,6 +838,80 @@ class PyBorderEXIFTUI(App):
 
     #picker-actions Button {
         margin: 0 1;
+    }
+
+    #fixed-ratio-toggle-row {
+        margin-bottom: 1;
+    }
+
+    #fixed-ratio-params {
+        margin-bottom: 1;
+    }
+
+    .fr-param {
+        width: 1fr;
+        margin-right: 1;
+    }
+
+    .fr-auto-disabled {
+        opacity: 0.5;
+    }
+
+    #preview-main {
+        height: 1fr;
+    }
+
+    #preview-left {
+        width: 30%;
+        margin-right: 1;
+    }
+
+    #preview-right {
+        width: 70%;
+    }
+
+    #preview-image-list {
+        height: 1fr;
+    }
+
+    #preview-text {
+        height: 1fr;
+    }
+
+    #preview-actions {
+        dock: bottom;
+        height: 3;
+        align: center middle;
+    }
+
+    #preview-actions Button {
+        margin: 0 1;
+    }
+
+    #preview-status {
+        margin-right: 1;
+    }
+
+    #layout-list-panel {
+        width: 3fr;
+        margin-right: 1;
+    }
+
+    #layout-controls {
+        width: 1fr;
+    }
+
+    #layout-list {
+        height: 1fr;
+    }
+
+    #layout-controls Button {
+        width: 100%;
+        margin-bottom: 1;
+    }
+
+    #layout-available {
+        width: 100%;
     }
     """
 

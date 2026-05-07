@@ -40,6 +40,15 @@ Examples:
                                    "or 'custom=TOP,BOTTOM,LEFT,RIGHT' or 'color=R,G,B'")
     border_group.add_argument("--border-color", default="255,255,255",
                               help="Border color as R,G,B (default: 255,255,255)")
+    border_group.add_argument("--fixed-ratio", nargs="?", const="c", default=None,
+                              metavar="AUTO_PARAM",
+                              help="Enable fixed aspect ratio mode. AUTO_PARAM is which border to auto-calculate: "
+                                   "a (left/right), b (top), or c (bottom). Default: c. "
+                                   "Use --fr-params to set the manual values.")
+    border_group.add_argument("--fr-params", default="50,50,50",
+                              metavar="A,B,C",
+                              help="Fixed ratio border values as a,b,c (left/right, top, bottom). "
+                                   "The auto parameter value is ignored. Default: 50,50,50")
 
     # EXIF options
     exif_group = parser.add_argument_group("EXIF Metadata Options")
@@ -173,6 +182,39 @@ def _apply_cli_overrides(config, args):
                 border["color"] = [int(x) for x in value.split(",")]
             except ValueError:
                 pass
+        elif key == "fixed_ratio":
+            border["use_fixed_ratio"] = True
+            fr = border.get("fixed_ratio", {})
+            if value in ("a", "b", "c"):
+                fr["auto_param"] = value
+            border["fixed_ratio"] = fr
+        elif key == "fr_params":
+            fr = border.get("fixed_ratio", {})
+            try:
+                parts = [int(x.strip()) for x in value.split(",")]
+                if len(parts) == 3:
+                    fr["a"] = parts[0]
+                    fr["b"] = parts[1]
+                    fr["c"] = parts[2]
+            except ValueError:
+                pass
+            border["fixed_ratio"] = fr
+
+    # Fixed ratio (via dedicated flags)
+    if args.fixed_ratio is not None:
+        border["use_fixed_ratio"] = True
+        fr = border.get("fixed_ratio", {})
+        fr["auto_param"] = args.fixed_ratio if args.fixed_ratio in ("a", "b", "c") else "c"
+        try:
+            parts = [int(x.strip()) for x in args.fr_params.split(",")]
+            if len(parts) == 3:
+                fr["a"] = parts[0]
+                fr["b"] = parts[1]
+                fr["c"] = parts[2]
+        except ValueError:
+            pass
+        border["fixed_ratio"] = fr
+
     config.border = border
 
     # EXIF
