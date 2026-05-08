@@ -2,12 +2,15 @@
 """CLI interface for PyBorderEXIF."""
 
 import argparse
+import logging
 import os
 import sys
 
 from border_exif.config import Config, BORDER_PRESETS
 from border_exif.core import process_image, process_images, get_supported_images_from_dir
 from border_exif.exif_reader import get_all_field_names, get_field_label
+
+logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 
 
 def main():

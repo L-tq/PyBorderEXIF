@@ -1,26 +1,36 @@
 """Logo placement on bordered images."""
 
 import os
+import logging
 from io import BytesIO
 from PIL import Image
 
+logger = logging.getLogger(__name__)
 
-def _load_svg_logo(logo_path, max_size):
-    """Render an SVG logo to a PIL Image."""
+
+def _load_svg_logo(logo_path, max_width=None, max_height=None):
+    """Render an SVG logo to a PIL Image, preserving aspect ratio."""
     import cairosvg
-    png_bytes = cairosvg.svg2png(url=logo_path, output_width=max_size, output_height=max_size)
+    kwargs = {}
+    if max_width is not None:
+        kwargs["output_width"] = max_width
+    if max_height is not None:
+        kwargs["output_height"] = max_height
+    png_bytes = cairosvg.svg2png(url=logo_path, **kwargs)
     return Image.open(BytesIO(png_bytes)).convert("RGBA")
 
 
-def _load_logo(logo_path, max_size=None):
-    """Load a logo image, preserving transparency."""
+def _load_logo(logo_path, max_width=None, max_height=None):
+    """Load a logo image, fit within max dimensions preserving aspect ratio."""
     img = Image.open(logo_path)
     if img.mode not in ("RGBA", "RGB"):
         img = img.convert("RGBA")
-    if max_size and (img.width > max_size or img.height > max_size):
-        ratio = min(max_size / img.width, max_size / img.height)
-        new_size = (int(img.width * ratio), int(img.height * ratio))
-        img = img.resize(new_size, Image.LANCZOS)
+    if max_width and img.width > max_width:
+        ratio = max_width / img.width
+        img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS)
+    if max_height and img.height > max_height:
+        ratio = max_height / img.height
+        img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS)
     return img
 
 
@@ -30,48 +40,86 @@ def _get_logo_position(image_size, border_pixels, logo, position, offset_x, offs
     position: "top-left", "top-right", "bottom-left", "bottom-right"
     """
     img_w, img_h = image_size
-    top = border_pixels.get("top", 0)
-    bottom = border_pixels.get("bottom", 0)
-    left = border_pixels.get("left", 0)
-    right = border_pixels.get("right", 0)
-
     lw, lh = logo.size
 
-    # Base positions (in border area)
+    # Positions are relative to the outer image edges; offset pushes inward.
+    # The logo is already sized to fit within the border strip at its position.
     if position == "top-left":
         x = offset_x
         y = offset_y
     elif position == "top-right":
-        x = img_w - right - lw - offset_x
+        x = img_w - lw - offset_x
         y = offset_y
     elif position == "bottom-left":
         x = offset_x
-        y = img_h - bottom - lh - offset_y
+        y = img_h - lh - offset_y
     elif position == "bottom-right":
-        x = img_w - right - lw - offset_x
-        y = img_h - bottom - lh - offset_y
+        x = img_w - lw - offset_x
+        y = img_h - lh - offset_y
     elif position == "center-top":
         x = (img_w - lw) // 2 + offset_x
         y = offset_y
     elif position == "center-bottom":
         x = (img_w - lw) // 2 + offset_x
-        y = img_h - bottom - lh - offset_y
+        y = img_h - lh - offset_y
     elif position == "left-center":
         x = offset_x
         y = (img_h - lh) // 2 + offset_y
     elif position == "right-center":
-        x = img_w - right - lw - offset_x
+        x = img_w - lw - offset_x
         y = (img_h - lh) // 2 + offset_y
     else:
         # Default: bottom-left
         x = offset_x
-        y = img_h - bottom - lh - offset_y
+        y = img_h - lh - offset_y
 
     # Clamp to image bounds
     x = max(0, min(x, img_w - lw))
     y = max(0, min(y, img_h - lh))
 
     return x, y
+
+
+def _get_logo_max_dims(position, border_pixels, image_size, scale, margin_ratio=0.85):
+    """Compute max width/height for a logo based on its border position.
+
+    The logo is sized to fit within the border at its position (e.g. a
+    bottom-left logo fits the bottom border height). *margin_ratio* reserves a
+    fraction of the border for padding (0.85 = 7.5% margin on each side).
+    """
+    top = border_pixels.get("top", 0)
+    bottom = border_pixels.get("bottom", 0)
+    left = border_pixels.get("left", 0)
+    right = border_pixels.get("right", 0)
+
+    max_w = None
+    max_h = None
+
+    if position in ("top-left", "top-right", "center-top"):
+        avail = top
+        if avail > 0:
+            max_h = int(avail * margin_ratio * scale)
+    elif position in ("bottom-left", "bottom-right", "center-bottom"):
+        avail = bottom
+        if avail > 0:
+            max_h = int(avail * margin_ratio * scale)
+    elif position in ("left-center",):
+        avail = left
+        if avail > 0:
+            max_w = int(avail * margin_ratio * scale)
+    elif position in ("right-center",):
+        avail = right
+        if avail > 0:
+            max_w = int(avail * margin_ratio * scale)
+
+    # If the primary border dimension is zero (or position is unknown),
+    # fall back to the smallest non-zero border.
+    if max_h is None and max_w is None:
+        nonzero = [v for v in (top, bottom, left, right) if v > 0]
+        fallback = min(nonzero) if nonzero else int(min(image_size) * 0.05)
+        max_h = int(fallback * margin_ratio * scale)
+
+    return max_w, max_h
 
 
 def place_logos(image, logos_config, border_pixels):
@@ -89,36 +137,36 @@ def place_logos(image, logos_config, border_pixels):
     if not logos_config:
         return image
 
+    any_enabled = any(logo.get("enabled") for logo in logos_config)
+    if not any_enabled:
+        return image
+
     # Ensure RGBA for logo compositing
     if image.mode != "RGBA":
         image = image.convert("RGBA")
-
-    # Calculate max logo size based on smallest border dimension
-    top = border_pixels.get("top", 0)
-    bottom = border_pixels.get("bottom", 0)
-    left = border_pixels.get("left", 0)
-    right = border_pixels.get("right", 0)
-    min_border = min(top, bottom, left, right) if any([top, bottom, left, right]) else 50
-    max_logo_dim = int(min_border * 0.9)
 
     for logo_cfg in logos_config:
         if not logo_cfg.get("enabled"):
             continue
         path = logo_cfg.get("path", "")
-        if not path or not os.path.exists(path):
+        if not path:
+            continue
+        if not os.path.exists(path):
+            logger.warning("Logo file not found: %s", path)
             continue
 
         try:
+            position = logo_cfg.get("position", "bottom-left")
             scale = logo_cfg.get("scale", 0.5)
-            max_size = int(max_logo_dim * scale * 2)
+
+            max_w, max_h = _get_logo_max_dims(position, border_pixels, image.size, scale)
 
             # Detect SVG and use appropriate loader
             if path.lower().endswith(".svg"):
-                logo = _load_svg_logo(path, max_size)
+                logo = _load_svg_logo(path, max_width=max_w, max_height=max_h)
             else:
-                logo = _load_logo(path, max_size=max_size)
+                logo = _load_logo(path, max_width=max_w, max_height=max_h)
 
-            position = logo_cfg.get("position", "bottom-left")
             offset_x = logo_cfg.get("offset_x", 0)
             offset_y = logo_cfg.get("offset_y", 0)
 
@@ -128,7 +176,7 @@ def place_logos(image, logos_config, border_pixels):
             layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
             layer.paste(logo, (x, y))
             image = Image.alpha_composite(image, layer)
-        except Exception:
-            continue
+        except Exception as e:
+            logger.warning("Failed to place logo %s: %s", path, e)
 
     return image

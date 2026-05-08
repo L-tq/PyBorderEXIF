@@ -21,7 +21,11 @@ exif:
   alignment: left
   author_name: Test Photographer
   enabled: true
-  field_layout: null
+  field_layout:
+  - focal_length_35mm
+  - aperture
+  - iso
+  - exposure_time
   fields:
   - focal_length_35mm
   - aperture
@@ -32,17 +36,17 @@ exif:
   - 0
   - 0
   font_family: Roboto Regular
-  font_size: 36
-  line_spacing: 4
-  margin: 10
+  font_size: 100
+  line_spacing: 80
+  margin: 100
   position: bottom
 input_dir: /home/scd/Downloads
 logo_dir: ''
 logos:
-- enabled: false
+- enabled: true
   offset_x: 0
   offset_y: 0
-  path: D:/ltq/PyBorderEXIF/Sony_Alpha_logo.svg
+  path: /home/scd/Downloads/Sony_Alpha_logo.svg
   position: bottom-left
   scale: 0.5
 - enabled: false
@@ -67,4 +71,4 @@ output:
   format: JPEG
   jpeg_quality: 95
   suffix: _bordered
-output_dir: /tmp
+output_dir: /home/scd/Downloads
