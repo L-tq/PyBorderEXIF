@@ -122,7 +122,61 @@ def _get_logo_max_dims(position, border_pixels, image_size, scale, margin_ratio=
     return max_w, max_h
 
 
-def place_logos(image, logos_config, border_pixels):
+def _place_bottom_logo(image, logo_cfg, border_pixels, text_bottom_y):
+    """Place a single logo within the bottom border strip using layout controls.
+
+    Uses bottom_layout (left/center/right), bottom_size_pct, bottom_margin_x,
+    bottom_margin_y, and bottom_text_spacing from the logo config.
+    """
+    img_w, img_h = image.size
+    bottom_h = border_pixels.get("bottom", 0)
+    if bottom_h <= 0:
+        return image
+
+    path = logo_cfg.get("path", "")
+    bottom_layout = logo_cfg.get("bottom_layout", "left")
+    bottom_size_pct = logo_cfg.get("bottom_size_pct", 80.0)
+    bottom_margin_x = logo_cfg.get("bottom_margin_x", 10)
+    bottom_margin_y = logo_cfg.get("bottom_margin_y", 10)
+    bottom_text_spacing = logo_cfg.get("bottom_text_spacing", 10)
+
+    # Size logo as % of bottom border height
+    max_h = int(bottom_h * bottom_size_pct / 100.0)
+    if max_h <= 0:
+        return image
+
+    # Load logo constrained to max_h
+    if path.lower().endswith(".svg"):
+        logo = _load_svg_logo(path, max_height=max_h)
+    else:
+        logo = _load_logo(path, max_height=max_h)
+
+    lw, lh = logo.size
+
+    # Horizontal positioning
+    if bottom_layout == "center":
+        x = (img_w - lw) // 2
+    elif bottom_layout == "right":
+        x = img_w - lw - bottom_margin_x
+    else:  # "left"
+        x = bottom_margin_x
+    x = max(0, min(x, img_w - lw))
+
+    # Vertical positioning within bottom border
+    inner_edge_y = img_h - bottom_h
+    if text_bottom_y is not None and text_bottom_y > inner_edge_y:
+        y = text_bottom_y + bottom_text_spacing
+    else:
+        y = img_h - bottom_margin_y - lh
+    y = max(inner_edge_y, min(y, img_h - lh))
+
+    layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    layer.paste(logo, (x, y))
+    image = Image.alpha_composite(image, layer)
+    return image
+
+
+def place_logos(image, logos_config, border_pixels, text_bottom_y=None):
     """
     Place logos on a bordered image.
 
@@ -130,6 +184,8 @@ def place_logos(image, logos_config, border_pixels):
         image: PIL Image with border
         logos_config: list of logo config dicts
         border_pixels: dict of border pixel values (for positioning context)
+        text_bottom_y: y-coordinate of bottom edge of rendered EXIF text
+                       (None if no text). Used to avoid text/logo overlap.
 
     Returns:
         PIL Image with logos pasted
@@ -157,25 +213,28 @@ def place_logos(image, logos_config, border_pixels):
 
         try:
             position = logo_cfg.get("position", "bottom-left")
-            scale = logo_cfg.get("scale", 0.5)
+            bottom_layout = logo_cfg.get("bottom_layout")
 
-            max_w, max_h = _get_logo_max_dims(position, border_pixels, image.size, scale)
-
-            # Detect SVG and use appropriate loader
-            if path.lower().endswith(".svg"):
-                logo = _load_svg_logo(path, max_width=max_w, max_height=max_h)
+            # Route bottom-border logos through the new layout-aware path
+            if position.startswith("bottom-") and bottom_layout is not None:
+                image = _place_bottom_logo(image, logo_cfg, border_pixels, text_bottom_y)
             else:
-                logo = _load_logo(path, max_width=max_w, max_height=max_h)
+                scale = logo_cfg.get("scale", 0.5)
+                max_w, max_h = _get_logo_max_dims(position, border_pixels, image.size, scale)
 
-            offset_x = logo_cfg.get("offset_x", 0)
-            offset_y = logo_cfg.get("offset_y", 0)
+                if path.lower().endswith(".svg"):
+                    logo = _load_svg_logo(path, max_width=max_w, max_height=max_h)
+                else:
+                    logo = _load_logo(path, max_width=max_w, max_height=max_h)
 
-            x, y = _get_logo_position(image.size, border_pixels, logo, position, offset_x, offset_y)
+                offset_x = logo_cfg.get("offset_x", 0)
+                offset_y = logo_cfg.get("offset_y", 0)
 
-            # Create a temporary layer for proper alpha compositing
-            layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
-            layer.paste(logo, (x, y))
-            image = Image.alpha_composite(image, layer)
+                x, y = _get_logo_position(image.size, border_pixels, logo, position, offset_x, offset_y)
+
+                layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+                layer.paste(logo, (x, y))
+                image = Image.alpha_composite(image, layer)
         except Exception as e:
             logger.warning("Failed to place logo %s: %s", path, e)
 

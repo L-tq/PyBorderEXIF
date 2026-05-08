@@ -324,22 +324,66 @@ class MainScreen(Screen):
                         yield Button("Reset to Default", id="btn-layout-reset", variant="default")
 
             with TabPane("Logos", id="tab-logos"):
-                with Vertical():
+                with ScrollableContainer(id="logo-scroll"):
                     for i in range(4):
                         logo = self._config.logos[i] if i < len(self._config.logos) else {}
-                        with Horizontal(classes="logo-row"):
-                            yield Switch(value=logo.get("enabled", False), id=f"logo-{i}-enable")
-                            yield Input(
-                                value=logo.get("path", ""),
-                                id=f"logo-{i}-path",
-                                placeholder=f"Logo {i+1} path..."
-                            )
-                            yield Select(
-                                [("TL", "top-left"), ("TR", "top-right"),
-                                 ("BL", "bottom-left"), ("BR", "bottom-right")],
-                                id=f"logo-{i}-pos",
-                                value=logo.get("position", "bottom-left")
-                            )
+                        with Vertical(classes="logo-group"):
+                            yield Label(f"Logo {i + 1}", classes="section-label")
+                            with Horizontal(classes="logo-row"):
+                                yield Switch(value=logo.get("enabled", False), id=f"logo-{i}-enable")
+                                yield Label("Enable", classes="inline-label")
+                            with Horizontal(classes="logo-row"):
+                                yield Label("Path:", classes="logo-field-label")
+                                yield Input(
+                                    value=logo.get("path", ""),
+                                    id=f"logo-{i}-path",
+                                    placeholder=f"Logo {i+1} path..."
+                                )
+                            with Horizontal(classes="logo-row"):
+                                yield Label("Position:", classes="logo-field-label")
+                                yield Select(
+                                    [("Top-Left", "top-left"), ("Top-Right", "top-right"),
+                                     ("Bottom-Left", "bottom-left"), ("Bottom-Right", "bottom-right")],
+                                    id=f"logo-{i}-pos",
+                                    value=logo.get("position", "bottom-left")
+                                )
+                            with Vertical(id=f"logo-{i}-bottom-controls", classes="bottom-logo-controls"):
+                                yield Label("Bottom Border Settings:", classes="group-label")
+                                with Horizontal(classes="logo-row"):
+                                    yield Label("Alignment:", classes="logo-field-label")
+                                    yield Select(
+                                        [("Left", "left"), ("Center", "center"), ("Right", "right")],
+                                        id=f"logo-{i}-bottom-layout",
+                                        value=logo.get("bottom_layout", "left")
+                                    )
+                                with Horizontal(classes="logo-row"):
+                                    yield Label("Size (%):", classes="logo-field-label")
+                                    yield Input(
+                                        value=str(logo.get("bottom_size_pct", 80.0)),
+                                        id=f"logo-{i}-size-pct",
+                                        placeholder="80"
+                                    )
+                                with Horizontal(classes="logo-row"):
+                                    yield Label("Margin H:", classes="logo-field-label")
+                                    yield Input(
+                                        value=str(logo.get("bottom_margin_x", 10)),
+                                        id=f"logo-{i}-margin-x",
+                                        placeholder="10"
+                                    )
+                                with Horizontal(classes="logo-row"):
+                                    yield Label("Margin V:", classes="logo-field-label")
+                                    yield Input(
+                                        value=str(logo.get("bottom_margin_y", 10)),
+                                        id=f"logo-{i}-margin-y",
+                                        placeholder="10"
+                                    )
+                                with Horizontal(classes="logo-row"):
+                                    yield Label("Text Spacing:", classes="logo-field-label")
+                                    yield Input(
+                                        value=str(logo.get("bottom_text_spacing", 10)),
+                                        id=f"logo-{i}-text-spacing",
+                                        placeholder="10"
+                                    )
 
         with Horizontal(id="action-bar"):
             yield Button("Process", id="btn-process", variant="primary")
@@ -509,6 +553,10 @@ class MainScreen(Screen):
         self.query_one("#exif-margin", Input).value = str(self._config.exif.get("margin", 10))
         self.query_one("#exif-line-spacing", Input).value = str(self._config.exif.get("line_spacing", 4))
 
+        # Logo controls initial state
+        for i in range(4):
+            self._update_logo_controls_state(i)
+
     def _sync_config_from_ui(self):
         """Save current UI state into config object."""
         # Files
@@ -591,14 +639,36 @@ class MainScreen(Screen):
             sw = self.query_one(f"#logo-{i}-enable", Switch)
             inp = self.query_one(f"#logo-{i}-path", Input)
             sel = self.query_one(f"#logo-{i}-pos", Select)
-            logos.append({
+            logo = {
                 "enabled": sw.value,
                 "path": inp.value,
                 "position": sel.value if sel.value else "bottom-left",
                 "scale": 0.5,
                 "offset_x": 0,
                 "offset_y": 0,
-            })
+            }
+            # Read bottom-border controls
+            try:
+                logo["bottom_layout"] = self.query_one(f"#logo-{i}-bottom-layout", Select).value
+            except Exception:
+                logo["bottom_layout"] = "left"
+            try:
+                logo["bottom_size_pct"] = float(self.query_one(f"#logo-{i}-size-pct", Input).value or 80)
+            except (ValueError, Exception):
+                logo["bottom_size_pct"] = 80.0
+            try:
+                logo["bottom_margin_x"] = int(self.query_one(f"#logo-{i}-margin-x", Input).value or 10)
+            except (ValueError, Exception):
+                logo["bottom_margin_x"] = 10
+            try:
+                logo["bottom_margin_y"] = int(self.query_one(f"#logo-{i}-margin-y", Input).value or 10)
+            except (ValueError, Exception):
+                logo["bottom_margin_y"] = 10
+            try:
+                logo["bottom_text_spacing"] = int(self.query_one(f"#logo-{i}-text-spacing", Input).value or 10)
+            except (ValueError, Exception):
+                logo["bottom_text_spacing"] = 10
+            logos.append(logo)
         self._config.logos = logos
 
         self._config.save()
@@ -665,6 +735,48 @@ class MainScreen(Screen):
     @on(Select.Changed, "#fr-auto-param")
     def on_fixed_ratio_auto_changed(self):
         self._update_fixed_ratio_inputs()
+
+    def _update_logo_controls_state(self, i):
+        """Enable/disable bottom-border controls based on position and layout."""
+        try:
+            pos_select = self.query_one(f"#logo-{i}-pos", Select)
+        except Exception:
+            return
+        try:
+            controls = self.query_one(f"#logo-{i}-bottom-controls", Vertical)
+        except Exception:
+            return
+
+        is_bottom = pos_select.value is not None and str(pos_select.value).startswith("bottom-")
+        controls.disabled = not is_bottom
+
+        if is_bottom:
+            try:
+                layout_sel = self.query_one(f"#logo-{i}-bottom-layout", Select)
+                is_center = layout_sel.value == "center"
+            except Exception:
+                is_center = False
+            try:
+                mx = self.query_one(f"#logo-{i}-margin-x", Input)
+                if is_center:
+                    mx.disabled = True
+                    mx.add_class("fr-auto-disabled")
+                else:
+                    mx.disabled = False
+                    mx.remove_class("fr-auto-disabled")
+            except Exception:
+                pass
+
+    @on(Select.Changed)
+    def on_logo_select_changed(self, event):
+        """React to logo position or layout changes to update control states."""
+        widget_id = event.widget.id or ""
+        if widget_id.startswith("logo-") and (widget_id.endswith("-pos") or widget_id.endswith("-bottom-layout")):
+            try:
+                idx = int(widget_id.replace("logo-", "").split("-")[0])
+                self._update_logo_controls_state(idx)
+            except (ValueError, IndexError):
+                pass
 
     def _update_selection_status(self):
         list_view = self.query_one("#file-list", ListView)
@@ -912,6 +1024,36 @@ class PyBorderEXIFTUI(App):
 
     #layout-available {
         width: 100%;
+    }
+
+    #logo-scroll {
+        height: 1fr;
+    }
+
+    .logo-group {
+        border: solid $accent;
+        padding: 1;
+        margin-bottom: 1;
+    }
+
+    .bottom-logo-controls {
+        margin-left: 2;
+        padding: 1;
+        border: dashed $surface;
+    }
+
+    .group-label {
+        text-style: italic;
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+
+    .inline-label {
+        margin-left: 1;
+    }
+
+    .logo-field-label {
+        width: 14;
     }
     """
 

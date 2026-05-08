@@ -175,7 +175,8 @@ def _render_text_block(image, lines, font, font_color, border_pixels, position, 
     """
     Render a block of text onto the image border area.
 
-    Returns the modified image.
+    Returns (image, text_bottom_y) where text_bottom_y is the y-coordinate
+    of the bottom edge of the last rendered line, or None if no lines.
     """
     draw = ImageDraw.Draw(image)
 
@@ -224,7 +225,8 @@ def _render_text_block(image, lines, font, font_color, border_pixels, position, 
         draw.text((lx, current_y), line, font=font, fill=tuple(font_color))
         current_y += line_heights[i] + line_spacing
 
-    return image
+    text_bottom_y = current_y if lines else None
+    return image, text_bottom_y
 
 
 def _position_alignment_vertical(position, alignment):
@@ -282,9 +284,13 @@ def add_exif_text(image, exif_data, exif_config):
 
 def render_text_on_border(image, lines, font_size, font_color, border_pixels,
                           position, alignment, margin, line_spacing, font_family=None):
-    """Render text lines on the border area of an already-bordered image."""
+    """Render text lines on the border area of an already-bordered image.
+
+    Returns (image, text_bottom_y) where text_bottom_y is the y-coordinate
+    of the bottom of the last rendered line, or None if no lines rendered.
+    """
     if not lines:
-        return image
+        return image, None
 
     font = _load_font(font_size, font_family)
     vert_align = _position_alignment_vertical(position, alignment)
@@ -324,6 +330,7 @@ def process_image(image_path, config, output_path=None, text_lines=None):
     img = add_border(img, border_px, border_color)
 
     # 4. Add EXIF text
+    text_bottom_y = None
     if exif_cfg.get("enabled", True):
         if text_lines is not None:
             lines = text_lines
@@ -342,7 +349,7 @@ def process_image(image_path, config, output_path=None, text_lines=None):
             margin = exif_cfg.get("margin", 10)
             line_spacing = exif_cfg.get("line_spacing", 4)
 
-            img = render_text_on_border(
+            img, text_bottom_y = render_text_on_border(
                 img, lines, font_size, font_color, border_px,
                 position, alignment, margin, line_spacing, font_family
             )
@@ -350,7 +357,7 @@ def process_image(image_path, config, output_path=None, text_lines=None):
     # 5. Add logos
     logos = config.logos
     if logos:
-        img = place_logos(img, logos, border_px)
+        img = place_logos(img, logos, border_px, text_bottom_y=text_bottom_y)
 
     # 6. Save
     if output_path is None:

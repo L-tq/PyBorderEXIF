@@ -74,6 +74,17 @@ Examples:
     logo_group.add_argument("--logo-position", action="append", default=[],
                             help="Logo position (top-left, top-right, bottom-left, bottom-right). "
                                  "Specify once per logo.")
+    logo_group.add_argument("--logo-bottom-layout", action="append", default=[],
+                            choices=["left", "center", "right"],
+                            help="Logo alignment within bottom border. Specify once per logo.")
+    logo_group.add_argument("--logo-bottom-size-pct", action="append", default=[], type=float,
+                            help="Logo height as %% of bottom border. Specify once per logo (default: 80).")
+    logo_group.add_argument("--logo-bottom-margin-x", action="append", default=[], type=int,
+                            help="Horizontal margin from edge in bottom border. Specify once per logo (default: 10).")
+    logo_group.add_argument("--logo-bottom-margin-y", action="append", default=[], type=int,
+                            help="Vertical margin from bottom edge. Specify once per logo (default: 10).")
+    logo_group.add_argument("--logo-bottom-text-spacing", action="append", default=[], type=int,
+                            help="Spacing between logo and EXIF text. Specify once per logo (default: 10).")
 
     # Output options
     out_group = parser.add_argument_group("Output Options")
@@ -252,11 +263,32 @@ def _apply_cli_overrides(config, args):
                     "scale": 0.5,
                     "offset_x": 0,
                     "offset_y": 0,
+                    "bottom_layout": "left",
+                    "bottom_size_pct": 80.0,
+                    "bottom_margin_x": 10,
+                    "bottom_margin_y": 10,
+                    "bottom_text_spacing": 10,
                 })
         # Apply positions
         for i, pos in enumerate(args.logo_position[:4]):
             if i < len(logos):
                 logos[i]["position"] = pos
+        # Apply bottom-border layout overrides
+        for i, layout in enumerate(args.logo_bottom_layout[:4]):
+            if i < len(logos):
+                logos[i]["bottom_layout"] = layout
+        for i, pct in enumerate(args.logo_bottom_size_pct[:4]):
+            if i < len(logos):
+                logos[i]["bottom_size_pct"] = pct
+        for i, mx in enumerate(args.logo_bottom_margin_x[:4]):
+            if i < len(logos):
+                logos[i]["bottom_margin_x"] = mx
+        for i, my in enumerate(args.logo_bottom_margin_y[:4]):
+            if i < len(logos):
+                logos[i]["bottom_margin_y"] = my
+        for i, sp in enumerate(args.logo_bottom_text_spacing[:4]):
+            if i < len(logos):
+                logos[i]["bottom_text_spacing"] = sp
         config.logos = logos[:4]
 
     # Logo dir tracking

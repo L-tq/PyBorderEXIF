@@ -91,10 +91,14 @@ DEFAULT_CONFIG = {
         "line_spacing": 4,
     },
     "logos": [
-        {"enabled": False, "path": "", "position": "bottom-left", "scale": 0.5, "offset_x": 0, "offset_y": 0},
-        {"enabled": False, "path": "", "position": "bottom-right", "scale": 0.5, "offset_x": 0, "offset_y": 0},
-        {"enabled": False, "path": "", "position": "top-left", "scale": 0.5, "offset_x": 0, "offset_y": 0},
-        {"enabled": False, "path": "", "position": "top-right", "scale": 0.5, "offset_x": 0, "offset_y": 0},
+        {"enabled": False, "path": "", "position": "bottom-left", "scale": 0.5, "offset_x": 0, "offset_y": 0,
+         "bottom_layout": "left", "bottom_size_pct": 80.0, "bottom_margin_x": 10, "bottom_margin_y": 10, "bottom_text_spacing": 10},
+        {"enabled": False, "path": "", "position": "bottom-right", "scale": 0.5, "offset_x": 0, "offset_y": 0,
+         "bottom_layout": "right", "bottom_size_pct": 80.0, "bottom_margin_x": 10, "bottom_margin_y": 10, "bottom_text_spacing": 10},
+        {"enabled": False, "path": "", "position": "top-left", "scale": 0.5, "offset_x": 0, "offset_y": 0,
+         "bottom_layout": "left", "bottom_size_pct": 80.0, "bottom_margin_x": 10, "bottom_margin_y": 10, "bottom_text_spacing": 10},
+        {"enabled": False, "path": "", "position": "top-right", "scale": 0.5, "offset_x": 0, "offset_y": 0,
+         "bottom_layout": "left", "bottom_size_pct": 80.0, "bottom_margin_x": 10, "bottom_margin_y": 10, "bottom_text_spacing": 10},
     ],
     "output": {
         "format": "JPEG",
@@ -113,6 +117,19 @@ def _deep_merge(default, override):
         else:
             result[key] = value
     return result
+
+
+def _normalize_logo_config(logos):
+    """Ensure each logo dict has all default fields and migrate old field names."""
+    if not logos:
+        return logos
+    default_logo = DEFAULT_CONFIG["logos"][0]
+    normalized = []
+    for logo in logos:
+        merged = dict(default_logo)
+        merged.update(logo)
+        normalized.append(merged)
+    return normalized
 
 
 def _save_config(data, path):
@@ -134,7 +151,9 @@ def _load_config(path=None):
             except (UnicodeDecodeError, UnicodeError):
                 continue
         if data:
-            return _deep_merge(DEFAULT_CONFIG, data)
+            merged = _deep_merge(DEFAULT_CONFIG, data)
+            merged["logos"] = _normalize_logo_config(merged.get("logos", []))
+            return merged
     return dict(DEFAULT_CONFIG)
 
 
@@ -216,7 +235,7 @@ class Config:
 
     @logos.setter
     def logos(self, value):
-        self._data["logos"] = value
+        self._data["logos"] = _normalize_logo_config(value)
         self.save()
 
     @property

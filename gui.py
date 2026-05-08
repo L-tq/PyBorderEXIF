@@ -369,10 +369,11 @@ class PyBorderEXIFGUI:
         notebook.add(logos_frame, text="Logos")
 
         self._logo_widgets = []
+        self._logo_bottom_frames = []
         for i in range(4):
-            row_offset = i * 2
+            row_offset = i * 3
             ttk.Label(logos_frame, text=f"Logo {i + 1}:", font=("", 9, "bold")).grid(
-                row=row_offset, column=0, sticky=tk.W, padx=5, pady=2)
+                row=row_offset, column=0, sticky=tk.W, padx=5, pady=(5, 0))
 
             enable_var = tk.BooleanVar(value=False)
             path_var = tk.StringVar()
@@ -383,19 +384,65 @@ class PyBorderEXIFGUI:
 
             path_frame = ttk.Frame(logos_frame)
             path_frame.grid(row=row_offset + 1, column=0, columnspan=4, sticky=tk.EW, padx=20, pady=2)
-            ttk.Entry(path_frame, textvariable=path_var, width=50).pack(side=tk.LEFT, fill=tk.X, expand=True)
+            ttk.Entry(path_frame, textvariable=path_var, width=45).pack(side=tk.LEFT, fill=tk.X, expand=True)
             ttk.Button(path_frame, text="Browse",
-                       command=lambda v=path_var, p=pos_var: self._browse_logo(v)).pack(side=tk.LEFT, padx=5)
-            ttk.Combobox(path_frame, textvariable=pos_var,
-                         values=["top-left", "top-right", "bottom-left", "bottom-right",
-                                 "center-top", "center-bottom", "left-center", "right-center"],
-                         state="readonly", width=15).pack(side=tk.LEFT, padx=5)
+                       command=lambda v=path_var: self._browse_logo(v)).pack(side=tk.LEFT, padx=5)
+            pos_combo = ttk.Combobox(path_frame, textvariable=pos_var,
+                                     values=["top-left", "top-right", "bottom-left", "bottom-right",
+                                             "center-top", "center-bottom", "left-center", "right-center"],
+                                     state="readonly", width=12)
+            pos_combo.pack(side=tk.LEFT, padx=5)
+            pos_combo.bind("<<ComboboxSelected>>", lambda e, idx=i: self._on_logo_bottom_visibility(idx))
+
+            # Bottom-border controls sub-frame
+            layout_var = tk.StringVar(value="left")
+            size_pct_var = tk.DoubleVar(value=80.0)
+            margin_x_var = tk.IntVar(value=10)
+            margin_y_var = tk.IntVar(value=10)
+            text_spacing_var = tk.IntVar(value=10)
+
+            bottom_frame = ttk.LabelFrame(logos_frame, text="Bottom Border Layout", padding=5)
+            bottom_frame.grid(row=row_offset + 2, column=0, columnspan=4, sticky=tk.EW, padx=40, pady=2)
+
+            ttk.Label(bottom_frame, text="Align:").grid(row=0, column=0, sticky=tk.W, padx=2)
+            layout_combo = ttk.Combobox(bottom_frame, textvariable=layout_var,
+                                        values=["left", "center", "right"], state="readonly", width=8)
+            layout_combo.grid(row=0, column=1, sticky=tk.W, padx=2)
+            layout_combo.bind("<<ComboboxSelected>>", lambda e, idx=i: self._on_logo_layout_changed(idx))
+
+            ttk.Label(bottom_frame, text="Size %:").grid(row=0, column=2, sticky=tk.W, padx=(10, 2))
+            ttk.Spinbox(bottom_frame, from_=10, to=100, textvariable=size_pct_var, width=5).grid(
+                row=0, column=3, padx=2)
+
+            ttk.Label(bottom_frame, text="Margin H:").grid(row=1, column=0, sticky=tk.W, padx=2, pady=(5, 0))
+            self._logo_margin_x_widgets = getattr(self, '_logo_margin_x_widgets', {})
+            mx_spin = ttk.Spinbox(bottom_frame, from_=0, to=500, textvariable=margin_x_var, width=5)
+            mx_spin.grid(row=1, column=1, padx=2, pady=(5, 0))
+            self._logo_margin_x_widgets[i] = mx_spin
+
+            ttk.Label(bottom_frame, text="Margin V:").grid(row=1, column=2, sticky=tk.W, padx=(10, 2), pady=(5, 0))
+            ttk.Spinbox(bottom_frame, from_=0, to=500, textvariable=margin_y_var, width=5).grid(
+                row=1, column=3, padx=2, pady=(5, 0))
+
+            ttk.Label(bottom_frame, text="Text Spacing:").grid(row=2, column=0, sticky=tk.W, padx=2, pady=(5, 0))
+            ttk.Spinbox(bottom_frame, from_=0, to=200, textvariable=text_spacing_var, width=5).grid(
+                row=2, column=1, padx=2, pady=(5, 0))
 
             self._logo_widgets.append({
                 "enable": enable_var,
                 "path": path_var,
                 "position": pos_var,
+                "bottom_layout": layout_var,
+                "bottom_size_pct": size_pct_var,
+                "bottom_margin_x": margin_x_var,
+                "bottom_margin_y": margin_y_var,
+                "bottom_text_spacing": text_spacing_var,
             })
+            self._logo_bottom_frames.append(bottom_frame)
+
+            # Set initial visibility
+            if not pos_var.get().startswith("bottom-"):
+                bottom_frame.grid_remove()
 
         logos_frame.columnconfigure(0, weight=1)
 
@@ -583,6 +630,14 @@ class PyBorderEXIFGUI:
                 lw["enable"].set(logos[i].get("enabled", False))
                 lw["path"].set(logos[i].get("path", ""))
                 lw["position"].set(logos[i].get("position", "bottom-left"))
+                lw["bottom_layout"].set(logos[i].get("bottom_layout", "left"))
+                lw["bottom_size_pct"].set(logos[i].get("bottom_size_pct", 80.0))
+                lw["bottom_margin_x"].set(logos[i].get("bottom_margin_x", 10))
+                lw["bottom_margin_y"].set(logos[i].get("bottom_margin_y", 10))
+                lw["bottom_text_spacing"].set(logos[i].get("bottom_text_spacing", 10))
+            # Update bottom frame visibility
+            self._on_logo_bottom_visibility(i)
+            self._on_logo_layout_changed(i)
 
     def _sync_ui_to_config(self):
         """Save UI state to config."""
@@ -626,6 +681,11 @@ class PyBorderEXIFGUI:
                 "scale": 0.5,
                 "offset_x": 0,
                 "offset_y": 0,
+                "bottom_layout": lw["bottom_layout"].get(),
+                "bottom_size_pct": lw["bottom_size_pct"].get(),
+                "bottom_margin_x": lw["bottom_margin_x"].get(),
+                "bottom_margin_y": lw["bottom_margin_y"].get(),
+                "bottom_text_spacing": lw["bottom_text_spacing"].get(),
             })
         self._config.logos = logos
 
@@ -648,6 +708,28 @@ class PyBorderEXIFGUI:
         )
         if f:
             path_var.set(f)
+
+    def _on_logo_bottom_visibility(self, idx):
+        """Show or hide bottom-border controls based on position selection."""
+        if idx >= len(self._logo_bottom_frames):
+            return
+        frame = self._logo_bottom_frames[idx]
+        pos = self._logo_widgets[idx]["position"].get()
+        if pos.startswith("bottom-"):
+            frame.grid()
+        else:
+            frame.grid_remove()
+
+    def _on_logo_layout_changed(self, idx):
+        """Enable/disable margin-x based on alignment selection."""
+        margin_x_widgets = getattr(self, '_logo_margin_x_widgets', {})
+        if idx not in margin_x_widgets:
+            return
+        layout = self._logo_widgets[idx]["bottom_layout"].get()
+        if layout == "center":
+            margin_x_widgets[idx].configure(state="disabled")
+        else:
+            margin_x_widgets[idx].configure(state="normal")
 
     def _load_dir_images(self):
         d = self._input_dir_var.get()
