@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block head %}
+<style>
+    .layout-grid { display: flex; flex-direction: column; gap: 24px; }
+    .controls-column { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+    .controls-column .panel { margin-bottom: 0; }
+    .panel { background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+    .panel h3 { margin: 0 0 14px; font-size: 1rem; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .form-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .form-row label { font-size: 0.85rem; min-width: 70px; color: #555; }
+    .form-row input, .form-row select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85rem; }
+    .form-row input[type="number"] { width: 70px; }
+    .form-row input[type="color"] { width: 40px; height: 32px; padding: 2px; cursor: pointer; }
+    .radio-group { display: flex; gap: 16px; margin-bottom: 8px; font-size: 0.9rem; }
+    .radio-group label { cursor: pointer; }
+
+    /* Preview */
+    .preview-container { text-align: center; }
+    .preview-container img { max-width: 100%; max-height: 65vh; border: 1px solid #ddd; border-radius: 4px; }
+    .preview-placeholder { border: 1px solid #ddd; border-radius: 8px; padding: 80px 40px;
+        background: #fafafa; color: #aaa; }
+
+    /* Text line */
+    .text-line { background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 6px;
+        padding: 10px 12px; margin-bottom: 6px; cursor: grab; }
+    .text-line.dragging { opacity: 0.5; }
+    .text-line .tl-header { display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 6px; }
+    .text-line .tl-name { font-weight: 600; font-size: 0.85rem; }
+    .text-line .tl-parts { display: flex; gap: 6px; margin-bottom: 6px; }
+    .text-line .tl-part { flex: 1; }
+    .text-line .tl-part label { font-size: 0.75rem; color: #888; display: block; margin-bottom: 2px; }
+    .text-line .tl-part input { width: 100%; padding: 5px 8px; border: 1px solid #ddd;
+        border-radius: 3px; font-size: 0.8rem; box-sizing: border-box; font-family: monospace; }
+    .text-line .tl-style { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+    .text-line .tl-style label { font-size: 0.72rem; color: #888; }
+    .text-line .tl-style select { padding: 3px 4px; border: 1px solid #ddd; border-radius: 3px; font-size: 0.78rem; }
+    .text-line .tl-style input[type="number"] { width: 44px; padding: 3px 4px; border: 1px solid #ddd; border-radius: 3px; font-size: 0.78rem; }
+    .text-line .tl-style input[type="color"] { width: 28px; height: 24px; padding: 1px; border: 1px solid #ddd; border-radius: 3px; cursor: pointer; }
+    .tl-tag-hint { font-size: 0.7rem; color: #aaa; margin-top: 2px; }
+    .tl-tag-hint span { color: #4a90d9; cursor: pointer; }
+    .tl-tag-hint span:hover { text-decoration: underline; }
+
+    /* Logo */
+    .logo-item { background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 6px;
+        padding: 12px; margin-bottom: 8px; }
+    .logo-item .logo-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .logo-item .logo-name { font-weight: 600; font-size: 0.85rem; }
+
+    .btn-sm { padding: 4px 12px; font-size: 0.8rem; border: none; border-radius: 4px; cursor: pointer; }
+    .btn-xs { padding: 2px 8px; font-size: 0.75rem; border: none; border-radius: 3px; cursor: pointer; }
+    .btn-link { background: none; border: none; color: #4a90d9; cursor: pointer; font-size: 0.85rem; text-decoration: underline; }
+    .toggle-switch { position: relative; display: inline-block; width: 36px; height: 20px; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+        background: #ccc; border-radius: 20px; transition: 0.2s; }
+    .toggle-slider:before { position: absolute; content: ""; height: 14px; width: 14px;
+        left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.2s; }
+    .toggle-switch input:checked + .toggle-slider { background: #4a90d9; }
+    .toggle-switch input:checked + .toggle-slider:before { transform: translateX(16px); }
+    .te-row { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
+    .te-row label { font-size: 0.8rem; min-width: 55px; color: #666; }
+    .te-row input, .te-row select { padding: 4px 8px; border: 1px solid #ddd; border-radius: 3px; font-size: 0.8rem; }
+    .te-row input[type="number"] { width: 60px; }
+</style>
+{% endblock %}
+{% block content %}
+<section class="step-content">
+    <h2>Step 2: Border, Logo & Text Layout</h2>
+
+    <div class="layout-grid">
+        <!-- Top: Preview -->
+        <div class="preview-container" id="previewContainer">
+            <div class="preview-placeholder" id="previewPlaceholder">
+                Select an image and adjust settings to see preview
+            </div>
+            <img id="previewImage" src="" alt="Preview" style="display:none;">
+        </div>
+
+        <!-- Bottom: Controls -->
+        <div class="controls-column">
+            <!-- Border Settings -->
+            <div class="panel" id="borderPanel">
+                <h3>Border</h3>
+                <div class="radio-group">
+                    <label><input type="radio" name="borderMode" value="custom" checked onchange="onBorderModeChange()"> Custom dimensions</label>
+                    <label><input type="radio" name="borderMode" value="aspect_ratio" onchange="onBorderModeChange()"> Fixed aspect ratio</label>
+                </div>
+                <div id="borderCustom">
+                    <div class="form-row"><label>Top (px)</label><input type="number" id="borderTop" value="100" min="0" onchange="debouncePreview()"></div>
+                    <div class="form-row"><label>Bottom (px)</label><input type="number" id="borderBottom" value="200" min="0" onchange="debouncePreview()"></div>
+                    <div class="form-row"><label>Left (px)</label><input type="number" id="borderLeft" value="80" min="0" onchange="debouncePreview()"></div>
+                    <div class="form-row"><label>Right (px)</label><input type="number" id="borderRight" value="80" min="0" onchange="debouncePreview()"></div>
+                </div>
+                <div id="borderAspect" style="display:none;">
+                    <div class="form-row"><label>Auto-calc</label>
+                        <select id="autoParam" onchange="debouncePreview()">
+                            <option value="c">Bottom (c)</option>
+                            <option value="b">Top (b)</option>
+                            <option value="a">Sides (a)</option>
+                        </select>
+                    </div>
+                    <div class="form-row"><label>Sides a (px)</label><input type="number" id="aspectA" value="80" min="0" onchange="debouncePreview()"></div>
+                    <div class="form-row"><label>Top b (px)</label><input type="number" id="aspectB" value="100" min="0" onchange="debouncePreview()"></div>
+                    <div class="form-row"><label>Bottom c (px)</label><input type="number" id="aspectC" value="200" min="0" onchange="debouncePreview()" disabled></div>
+                </div>
+                <div class="form-row" style="margin-top:8px;"><label>Color</label><input type="color" id="borderColor" value="#FFFFFF" onchange="debouncePreview()"></div>
+            </div>
+
+            <!-- Logos -->
+            <div class="panel">
+                <h3>Logos</h3>
+                <div id="logosList"></div>
+                <button class="btn btn-secondary btn-sm" onclick="addLogo()" style="margin-top:8px;">+ Add Logo</button>
+                <input type="file" id="logoFileInput" class="file-input-hidden" accept=".png,.jpg,.jpeg,.svg">
+            </div>
+
+            <!-- Text Lines -->
+            <div class="panel" style="grid-column: 1 / -1;">
+                <h3>Text Lines (Bottom Border)</h3>
+                <div id="textLinesList"></div>
+                <div style="margin-top:8px;">
+                    <button class="btn btn-secondary btn-sm" onclick="addTextLine()">+ Add Line</button>
+                    <span style="font-size:0.8rem; color:#888; margin-left:8px;">
+                        Use <code>{Tag Name}</code> to insert EXIF data
+                    </span>
+                </div>
+                <div style="margin-top:12px;">
+                    <div class="form-row"><label>Line spacing</label><input type="number" id="lineSpacing" value="1.3" step="0.1" min="0.8" max="3" onchange="debouncePreview()" style="width:60px;"></div>
+                    <div class="form-row"><label>Line gap</label><input type="number" id="linesGap" value="8" min="0" max="50" onchange="debouncePreview()" style="width:60px;"> px</div>
+                    <div class="form-row"><label>Left margin</label><input type="number" id="textMarginLeft" value="40" min="0" onchange="debouncePreview()" style="width:60px;"> px</div>
+                    <div class="form-row"><label>Right margin</label><input type="number" id="textMarginRight" value="40" min="0" onchange="debouncePreview()" style="width:60px;"> px</div>
+                    <div class="form-row"><label>Bottom margin</label><input type="number" id="textMarginBottom" value="30" min="0" onchange="debouncePreview()" style="width:60px;"> px</div>
+                </div>
+            </div>
+
+            <!-- Per-image selector -->
+            <div class="panel">
+                <h3>Preview Image</h3>
+                <select id="previewImageSelect" onchange="debouncePreview()"></select>
+            </div>
+        </div>
+    </div>
+
+    <div class="actions-bar" style="margin-top: 24px;">
+        <button class="btn btn-secondary" onclick="window.location.href='{{ url_for("step1") }}'">← Back</button>
+        <button class="btn btn-primary" onclick="goToStep3()">Next: Review & Download →</button>
+    </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/step2-layout.js') }}"></script>
+{% endblock %}

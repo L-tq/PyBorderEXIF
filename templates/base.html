@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ExifBorder – Image Framing Tool</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <header class="app-header">
+        <h1 class="app-title">ExifBorder</h1>
+        <nav class="step-nav" id="stepNav">
+            <a href="{{ url_for('step1') }}" class="step-link {% if step == 1 %}active{% endif %}">
+                <span class="step-number">1</span> Select Files
+            </a>
+            <span class="step-arrow">→</span>
+            <a href="{{ url_for('step2') }}" class="step-link {% if step == 2 %}active{% endif %}">
+                <span class="step-number">2</span> Layout & Preview
+            </a>
+            <span class="step-arrow">→</span>
+            <a href="{{ url_for('step3') }}" class="step-link {% if step == 3 %}active{% endif %}">
+                <span class="step-number">3</span> Review & Download
+            </a>
+        </nav>
+    </header>
+
+    <main class="app-main">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="app-footer">
+        <small>ExifBorder – All processing is local. No images are uploaded to any server.</small>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>
