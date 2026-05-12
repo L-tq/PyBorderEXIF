@@ -148,7 +148,7 @@ def read_exif_from_jpeg(filepath):
 
         result = _empty_exif_data()
         for tag_id, value in exif_data.items():
-            tag_name = TAGS.get(tag_id, tag_id)
+            tag_name = TAGS.get(tag_id, str(tag_id))
             result['all_tags'][tag_name] = str(value)
 
         result.update({
