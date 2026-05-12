@@ -371,9 +371,40 @@ def _resolve_placeholders(text, exif_data):
     return result
 
 
+def _resolve_part_font(part, exif_data):
+    """Resolve text, font, and color from a part config.
+
+    A part can be a plain string (old format) or a dict with font settings
+    (new format).
+    """
+    if isinstance(part, dict):
+        text = part.get('text', '')
+        font_family = part.get('font_family', 'Roboto')
+        font_size = int(part.get('font_size', 22))
+        font_weight = part.get('font_weight', 'normal')
+        font_style = part.get('font_style', 'normal')
+        font_color = part.get('font_color', '#333333')
+    else:
+        text = str(part) if part else ''
+        font_family = 'Roboto'
+        font_size = 22
+        font_weight = 'normal'
+        font_style = 'normal'
+        font_color = '#333333'
+
+    text = _resolve_placeholders(text, exif_data)
+    font = _load_font(font_family, font_size, font_weight, font_style)
+    color = _hex_to_rgb(font_color)
+    return text, font, color
+
+
 def _draw_text_overlays(canvas, img_w, img_h, border, text_lines,
                         global_config, exif_data):
-    """Draw text lines with left/center/right alignment in the bottom border area."""
+    """Draw text lines with left/center/right alignment in the bottom border area.
+
+    Each part (left/center/right) can have its own font family, size, weight,
+    style, and color. Old-style string parts fall back to defaults.
+    """
     bottom_h = border['bottom']
     if bottom_h <= 0 or not text_lines:
         return
@@ -395,33 +426,37 @@ def _draw_text_overlays(canvas, img_w, img_h, border, text_lines,
     total_h = 0
 
     for line_cfg in text_lines:
-        font = _load_font(
-            line_cfg.get('font_family', 'Roboto'),
-            int(line_cfg.get('font_size', 22)),
-            line_cfg.get('font_weight', 'normal'),
-            line_cfg.get('font_style', 'normal'),
-        )
+        left_text, left_font, left_color = _resolve_part_font(
+            line_cfg.get('left', ''), exif_data)
+        center_text, center_font, center_color = _resolve_part_font(
+            line_cfg.get('center', ''), exif_data)
+        right_text, right_font, right_color = _resolve_part_font(
+            line_cfg.get('right', ''), exif_data)
 
-        color = _hex_to_rgb(line_cfg.get('font_color', '#333333'))
-        lh = _get_line_height(font, line_spacing)
+        # Each part wraps with its own font
+        left_lines = _wrap_text_lines(left_text, left_font, available_w)
+        center_lines = _wrap_text_lines(center_text, center_font, part_w)
+        right_lines = _wrap_text_lines(right_text, right_font, part_w)
 
-        left_text = _resolve_placeholders(line_cfg.get('left', ''), exif_data)
-        center_text = _resolve_placeholders(line_cfg.get('center', ''), exif_data)
-        right_text = _resolve_placeholders(line_cfg.get('right', ''), exif_data)
-
-        left_lines = _wrap_text_lines(left_text, font, available_w)
-        center_lines = _wrap_text_lines(center_text, font, part_w)
-        right_lines = _wrap_text_lines(right_text, font, part_w)
+        # Use the max line height across the three fonts for vertical rhythm
+        lh_left = _get_line_height(left_font, line_spacing)
+        lh_center = _get_line_height(center_font, line_spacing)
+        lh_right = _get_line_height(right_font, line_spacing)
+        lh = max(lh_left, lh_center, lh_right)
 
         max_subs = max(len(left_lines), len(center_lines), len(right_lines), 1)
         line_total_h = max_subs * lh + lines_gap
 
         line_layouts.append({
             'left_lines': left_lines,
+            'left_font': left_font,
+            'left_color': left_color,
             'center_lines': center_lines,
+            'center_font': center_font,
+            'center_color': center_color,
             'right_lines': right_lines,
-            'font': font,
-            'color': color,
+            'right_font': right_font,
+            'right_color': right_color,
             'line_height': lh,
             'total_h': line_total_h,
             'max_subs': max_subs,
@@ -441,22 +476,26 @@ def _draw_text_overlays(canvas, img_w, img_h, border, text_lines,
         for i in range(layout['max_subs']):
             y = current_y + i * layout['line_height']
 
-            # Left-aligned
+            # Left-aligned — vertically centered within the line height
             if i < len(layout['left_lines']) and layout['left_lines'][i]:
-                draw.text((left_margin, y), layout['left_lines'][i],
-                          fill=layout['color'], font=layout['font'])
+                y_off = (layout['line_height'] - _get_line_height(layout['left_font'], line_spacing)) / 2
+                draw.text((left_margin, y + y_off), layout['left_lines'][i],
+                          fill=layout['left_color'], font=layout['left_font'])
 
             # Center-aligned
             if i < len(layout['center_lines']) and layout['center_lines'][i]:
-                tw = _text_width(layout['center_lines'][i], layout['font'])
-                draw.text((center_x - tw / 2, y), layout['center_lines'][i],
-                          fill=layout['color'], font=layout['font'])
+                y_off = (layout['line_height'] - _get_line_height(layout['center_font'], line_spacing)) / 2
+                tw = _text_width(layout['center_lines'][i], layout['center_font'])
+                draw.text((center_x - tw / 2, y + y_off), layout['center_lines'][i],
+                          fill=layout['center_color'], font=layout['center_font'])
 
             # Right-aligned
             if i < len(layout['right_lines']) and layout['right_lines'][i]:
-                tw = _text_width(layout['right_lines'][i], layout['font'])
-                draw.text((canvas.width - right_margin - tw, y), layout['right_lines'][i],
-                          fill=layout['color'], font=layout['font'])
+                y_off = (layout['line_height'] - _get_line_height(layout['right_font'], line_spacing)) / 2
+                tw = _text_width(layout['right_lines'][i], layout['right_font'])
+                draw.text((canvas.width - right_margin - tw, y + y_off),
+                          layout['right_lines'][i],
+                          fill=layout['right_color'], font=layout['right_font'])
 
         current_y += layout['total_h']
 

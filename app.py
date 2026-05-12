@@ -69,6 +69,36 @@ def get_temp_dir():
     return temp_dir
 
 
+def _resolve_logo_path(logo_path, session_dir):
+    """Resolve a logo path to an absolute file path.
+
+    Checks multiple locations in order:
+    1. Absolute path that exists
+    2. Relative to BASE_DIR (for built-in logos)
+    3. Relative to session_dir (for user-uploaded logos)
+    4. Falls back to session_dir join (preserves backward compat)
+    """
+    if not logo_path:
+        return logo_path
+
+    # Already absolute and exists
+    if os.path.isabs(logo_path) and os.path.exists(logo_path):
+        return logo_path
+
+    # Try relative to BASE_DIR (static/logos/ etc.)
+    base_relative = os.path.join(BASE_DIR, logo_path)
+    if os.path.exists(base_relative):
+        return base_relative
+
+    # Try session_dir
+    session_relative = os.path.join(session_dir, safe_filename(os.path.basename(logo_path)))
+    if os.path.exists(session_relative):
+        return session_relative
+
+    # Fallback: return session_dir path for backward compat
+    return session_relative
+
+
 def get_image_metadata(image_path):
     """Get metadata for an uploaded image."""
     exif = read_exif(image_path)
@@ -238,7 +268,7 @@ def generate_preview_api():
         logo_copy = dict(logo)
         logo_path = logo.get('path', '')
         if logo_path:
-            logo_copy['path'] = os.path.join(session_dir, safe_filename(os.path.basename(logo_path)))
+            logo_copy['path'] = _resolve_logo_path(logo_path, session_dir)
         resolved_logos.append(logo_copy)
 
     # Calculate border if using aspect ratio mode
@@ -409,7 +439,7 @@ def render_images():
             logo_copy = dict(logo)
             logo_path = logo.get('path', '')
             if logo_path:
-                logo_copy['path'] = os.path.join(session_dir, safe_filename(os.path.basename(logo_path)))
+                logo_copy['path'] = _resolve_logo_path(logo_path, session_dir)
             resolved_logos.append(logo_copy)
 
         border_final = _resolve_border(border_cfg, image_path)

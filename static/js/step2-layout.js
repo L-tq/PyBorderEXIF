@@ -33,6 +33,10 @@ async function loadConfig() {
         if (!config.text_lines && config.text_elements) {
             config.text_lines = migrateOldElements(config.text_elements);
         }
+        // Migrate old line-level font settings to per-part format
+        if (config.text_lines) {
+            config.text_lines = config.text_lines.map(migrateTextLine);
+        }
     } catch (e) {
         console.error('Failed to load config', e);
     }
@@ -65,18 +69,41 @@ function migrateOldElements(elements) {
         if (!text && elem.label) {
             text = '{' + elem.label + '}';
         }
-        lines.push({
-            left: text,
-            center: '',
-            right: '',
+        const part = {
+            text: text,
             font_family: elem.font_family || 'Roboto',
             font_size: elem.font_size || 22,
             font_color: elem.font_color || '#333333',
             font_weight: elem.font_weight || 'normal',
             font_style: elem.font_style || 'normal',
+        };
+        lines.push({
+            left: { ...part, text: text },
+            center: { ...part, text: '' },
+            right: { ...part, text: '' },
         });
     }
     return lines.length > 0 ? lines : null;
+}
+
+function migrateTextLine(line) {
+    // Convert old-format line (string parts + line-level font) to new format
+    // where each part is an object with its own font settings.
+    if (line.left !== null && line.left !== undefined && typeof line.left === 'object') {
+        return line;
+    }
+    const defaults = {
+        font_family: line.font_family || 'Roboto',
+        font_size: line.font_size || 22,
+        font_color: line.font_color || '#333333',
+        font_weight: line.font_weight || 'normal',
+        font_style: line.font_style || 'normal',
+    };
+    return {
+        left: { text: line.left || '', ...defaults },
+        center: { text: line.center || '', ...defaults },
+        right: { text: line.right || '', ...defaults },
+    };
 }
 
 // --- Border ---
@@ -205,32 +232,15 @@ function renderTextLines() {
         div.draggable = true;
         div.dataset.idx = idx;
 
-        const familyOpts = FONT_FAMILIES.map(f =>
-            `<option value="${f}" ${line.font_family === f ? 'selected' : ''}>${f}</option>`
-        ).join('');
-        const weightOpts = FONT_WEIGHTS.map(w =>
-            `<option value="${w}" ${line.font_weight === w ? 'selected' : ''}>${w}</option>`
-        ).join('');
-        const styleOpts = FONT_STYLES.map(s =>
-            `<option value="${s}" ${line.font_style === s ? 'selected' : ''}>${s}</option>`
-        ).join('');
-
         div.innerHTML = [
             '<div class="tl-header">',
             `<span class="tl-name">Line ${idx + 1}</span>`,
             `<button class="btn-danger btn-xs" onclick="event.stopPropagation(); removeTextLine(${idx})">✕</button>`,
             '</div>',
             '<div class="tl-parts">',
-            `<div class="tl-part"><label>Left</label><input type="text" value="${esc(line.left || '')}" onchange="updateTextLine(${idx},'left',this.value)" id="tl_left_${idx}"></div>`,
-            `<div class="tl-part"><label>Center</label><input type="text" value="${esc(line.center || '')}" onchange="updateTextLine(${idx},'center',this.value)" id="tl_center_${idx}"></div>`,
-            `<div class="tl-part"><label>Right</label><input type="text" value="${esc(line.right || '')}" onchange="updateTextLine(${idx},'right',this.value)" id="tl_right_${idx}"></div>`,
-            '</div>',
-            '<div class="tl-style">',
-            `<select onchange="updateTextLineStyle(${idx},'font_family',this.value)">${familyOpts}</select>`,
-            `<select onchange="updateTextLineStyle(${idx},'font_weight',this.value)">${weightOpts}</select>`,
-            `<select onchange="updateTextLineStyle(${idx},'font_style',this.value)">${styleOpts}</select>`,
-            `<label>Sz</label><input type="number" value="${line.font_size || 22}" min="8" max="200" onchange="updateTextLineStyle(${idx},'font_size',this.value)">`,
-            `<input type="color" value="${line.font_color || '#333333'}" onchange="updateTextLineStyle(${idx},'font_color',this.value)">`,
+            _renderPart(idx, 'left', line.left),
+            _renderPart(idx, 'center', line.center),
+            _renderPart(idx, 'right', line.right),
             '</div>',
             '<div class="tl-tag-hint">',
             '<span style="font-size:0.72rem; color:#888;">Insert tag into </span>',
@@ -254,12 +264,55 @@ function renderTextLines() {
     });
 }
 
+function _renderPart(idx, name, part) {
+    const p = (part && typeof part === 'object') ? part : { text: part || '' };
+    const text = esc(p.text || '');
+    const family = p.font_family || 'Roboto';
+    const weight = p.font_weight || 'normal';
+    const style = p.font_style || 'normal';
+    const size = p.font_size || 22;
+    const color = p.font_color || '#333333';
+
+    const familyOpts = FONT_FAMILIES.map(f =>
+        `<option value="${f}" ${family === f ? 'selected' : ''}>${f}</option>`
+    ).join('');
+    const weightOpts = FONT_WEIGHTS.map(w =>
+        `<option value="${w}" ${weight === w ? 'selected' : ''}>${w}</option>`
+    ).join('');
+    const styleOpts = FONT_STYLES.map(s =>
+        `<option value="${s}" ${style === s ? 'selected' : ''}>${s}</option>`
+    ).join('');
+
+    const capName = name.charAt(0).toUpperCase() + name.slice(1);
+    return [
+        `<div class="tl-part">`,
+        `<label>${capName}</label>`,
+        `<input type="text" value="${text}" onchange="updatePartText(${idx},'${name}',this.value)" id="tl_${name}_${idx}">`,
+        `<div class="tl-part-font">`,
+        `<select onchange="updatePartFont(${idx},'${name}','font_family',this.value)">${familyOpts}</select>`,
+        `<select onchange="updatePartFont(${idx},'${name}','font_weight',this.value)">${weightOpts}</select>`,
+        `<select onchange="updatePartFont(${idx},'${name}','font_style',this.value)">${styleOpts}</select>`,
+        `<input type="number" value="${size}" min="8" max="200" onchange="updatePartFont(${idx},'${name}','font_size',this.value)">`,
+        `<input type="color" value="${color}" onchange="updatePartFont(${idx},'${name}','font_color',this.value)">`,
+        `</div>`,
+        `</div>`,
+    ].join('');
+}
+
 function addTextLine() {
     if (!config.text_lines) config.text_lines = [];
+    const defaultPart = {
+        text: '',
+        font_family: 'Roboto',
+        font_size: 20,
+        font_color: '#777777',
+        font_weight: 'normal',
+        font_style: 'normal',
+    };
     config.text_lines.push({
-        left: '', center: '', right: '',
-        font_family: 'Roboto', font_size: 20,
-        font_color: '#777777', font_weight: 'normal', font_style: 'normal',
+        left: { ...defaultPart },
+        center: { ...defaultPart },
+        right: { ...defaultPart },
     });
     saveConfig();
     renderTextLines();
@@ -273,15 +326,21 @@ function removeTextLine(idx) {
     debouncePreview();
 }
 
-function updateTextLine(idx, part, value) {
-    config.text_lines[idx][part] = value;
+function updatePartText(idx, part, value) {
+    if (typeof config.text_lines[idx][part] !== 'object') {
+        config.text_lines[idx][part] = { text: '' };
+    }
+    config.text_lines[idx][part].text = value;
     saveConfig();
     debouncePreview();
 }
 
-function updateTextLineStyle(idx, field, value) {
+function updatePartFont(idx, part, field, value) {
     const numFields = ['font_size'];
-    config.text_lines[idx][field] = numFields.includes(field) ? (parseInt(value) || 18) : value;
+    if (typeof config.text_lines[idx][part] !== 'object') {
+        config.text_lines[idx][part] = { text: config.text_lines[idx][part] || '' };
+    }
+    config.text_lines[idx][part][field] = numFields.includes(field) ? (parseInt(value) || 18) : value;
     saveConfig();
     debouncePreview();
 }
@@ -299,7 +358,10 @@ function insertTag(idx, part, tagName) {
     input.focus();
     input.selectionStart = input.selectionEnd = cursorPos + tagPlaceholder.length;
 
-    config.text_lines[idx][part] = input.value;
+    if (typeof config.text_lines[idx][part] !== 'object') {
+        config.text_lines[idx][part] = { text: '' };
+    }
+    config.text_lines[idx][part].text = input.value;
     saveConfig();
     debouncePreview();
 }
