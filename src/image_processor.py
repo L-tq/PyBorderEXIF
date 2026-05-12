@@ -153,9 +153,14 @@ def _text_width(text, font):
 
 def _wrap_text_lines(text, font, max_width):
     """Wrap text to fit within max_width. Handles both Latin (word-wrap)
-    and CJK (character-wrap) scripts."""
+    and CJK (character-wrap) scripts.
+
+    NOTE: For single-line parts (left/center/right), pass max_width=None to disable wrapping."""
     if not text:
         return []
+    # If max_width is None, don't wrap - return all text as single line
+    if max_width is None:
+        return [text]
     lines = []
     for paragraph in text.split('\n'):
         if not paragraph.strip():
@@ -433,10 +438,10 @@ def _draw_text_overlays(canvas, img_w, img_h, border, text_lines,
         right_text, right_font, right_color = _resolve_part_font(
             line_cfg.get('right', ''), exif_data)
 
-        # Each part wraps with its own font
-        left_lines = _wrap_text_lines(left_text, left_font, available_w)
-        center_lines = _wrap_text_lines(center_text, center_font, part_w)
-        right_lines = _wrap_text_lines(right_text, right_font, part_w)
+        # Each part - no wrapping, allow overlay on other parts
+        left_lines = _wrap_text_lines(left_text, left_font, None)
+        center_lines = _wrap_text_lines(center_text, center_font, None)
+        right_lines = _wrap_text_lines(right_text, right_font, None)
 
         # Use the max line height across the three fonts for vertical rhythm
         lh_left = _get_line_height(left_font, line_spacing)
