@@ -5,7 +5,8 @@ Web app for framing photos with EXIF metadata overlays. Upload JPEG or Sony ARW 
 ## Requirements
 
 - Python 3.10+
-- System libraries: `libraw` (for ARW support)
+
+### Linux
 
 ```bash
 # Ubuntu/Debian
@@ -15,26 +16,60 @@ sudo apt install libraw-dev fonts-noto-cjk fonts-roboto
 sudo dnf install LibRaw-devel google-noto-sans-cjk-fonts google-roboto-fonts
 ```
 
+`libraw-dev` is needed to build `rawpy` for ARW raw file support. `fonts-noto-cjk` provides Chinese/Japanese/Korean glyphs for border text overlays.
+
+### macOS
+
+```bash
+brew install libraw
+```
+
+`rawpy` provides pre-built wheels for macOS, but libraw must be present at runtime. Fonts are bundled with macOS (PingFang SC covers CJK) — no extra font packages needed.
+
+### Windows
+
+No system dependencies required. `rawpy` ships pre-built wheels for 64-bit Windows (Python 3.10–3.14).
+
+Run the font download script — it tries Google Fonts first, then falls back to GitHub mirrors for users in China:
+
+```powershell
+python download_fonts.py
+```
+
+This downloads Roboto (Latin) and Noto Sans CJK SC (Simplified Chinese) into `static/fonts/`. Pass `--force` to re-download.
+
+SVG logo support (`cairosvg`) needs the Cairo C library on Windows. If you don't need SVG logos, this is optional. To enable it, install via Conda:
+
+```powershell
+conda install -c conda-forge cairo cairosvg
+```
+
 ## Install
 
 ```bash
-git clone <repo-url> exifborder
-cd exifborder
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate   # Linux/macOS
+# .venv\Scripts\activate    # Windows
 pip install -r requirements.txt
 ```
 
 ### Fonts
 
-The app needs fonts that cover both Latin and CJK characters:
+The app needs fonts that cover both Latin and CJK characters for border text:
 
 | Package | Provides |
 |---------|----------|
-| `fonts-roboto` | UI and default border text (Latin) |
-| `fonts-noto-cjk` | Chinese/Japanese/Korean glyphs in rendered borders |
+| Roboto | Default border text (Latin) |
+| Noto Sans CJK | Chinese/Japanese/Korean glyphs |
 
-If Roboto isn't installed as a system package, run `python setup_fonts.py` for alternative setup instructions. Without Noto Sans CJK, CJK text in borders will render as blank squares.
+If system packages aren't available (Windows, offline, or no root), run the bundled download script:
+
+```bash
+python download_fonts.py      # Linux / macOS / Windows
+python download_fonts.py --force  # re-download all
+```
+
+This downloads Roboto and Noto Sans CJK SC into `static/fonts/`. Download order: Google Fonts → `fonts.googlecn.com` (China mirror) → GitHub raw → `ghproxy.com` (GitHub proxy). Without Noto Sans CJK, CJK text in borders renders as blank squares.
 
 ## Run
 
@@ -53,8 +88,13 @@ The dev server opens a browser automatically at `http://127.0.0.1:5000`.
 Flask's built-in server is not suitable for production. Use a WSGI server:
 
 ```bash
+# Linux / macOS
 pip install gunicorn
 gunicorn -w 4 -b 127.0.0.1:8000 app:app
+
+# Windows (gunicorn is Unix-only)
+pip install waitress
+waitress-serve --host 127.0.0.1 --port 8000 app:app
 ```
 
 For a full production setup, place gunicorn behind a reverse proxy (nginx, Caddy) that handles TLS and serves static files:
@@ -95,7 +135,7 @@ export SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 exifborder/
 ├── app.py              # Flask application entry point
 ├── requirements.txt
-├── setup_fonts.py      # Font setup helper
+├── download_fonts.py   # Font downloader (multi-mirror)
 ├── config.json         # Persistent user settings (auto-created)
 ├── src/
 │   ├── border.py       # Border dimension calculation
