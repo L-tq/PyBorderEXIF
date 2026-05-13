@@ -207,7 +207,7 @@ def process_image(image_path, border_config, logos_config, text_lines,
     Args:
         image_path: Path to input image
         border_config: dict with border dimensions & color
-        logos_config: list of logo dicts (path, rel_x, rel_y, offset_x, offset_y, scale)
+        logos_config: list of logo dicts (path, offset_x, offset_y, width, height)
         text_lines: list of text line dicts (left, center, right, font settings)
         global_text_config: dict with line_spacing, margins
         exif_data: dict of EXIF tag values
@@ -294,20 +294,13 @@ def _draw_logo(canvas, logo_cfg, border):
         if (target_w, target_h) != (logo_img.width, logo_img.height):
             logo_img = logo_img.resize((target_w, target_h), Image.LANCZOS)
 
-        # Calculate position
-        rel_x = float(logo_cfg.get('rel_x', 0))
-        rel_y = float(logo_cfg.get('rel_y', 0))
+        # Calculate position — offset_x/offset_y from bottom-left of canvas
+        # to bottom-left of logo
         offset_x = int(logo_cfg.get('offset_x', 0))
         offset_y = int(logo_cfg.get('offset_y', 0))
 
-        # Position relative to left-bottom of border (origin at bottom-left)
-        border_w = border['left'] + border['right']
-        border_h = border['top'] + border['bottom']
-
-        pos_x = int(rel_x * border_w) + offset_x
-        # Bottom-left origin: y increases upward
-        canvas_h = canvas.height
-        pos_y = canvas_h - int(rel_y * border_h) - offset_y - logo_img.height
+        pos_x = offset_x
+        pos_y = canvas.height - offset_y - logo_img.height
 
         # Paste with alpha
         if logo_img.mode == 'RGBA':

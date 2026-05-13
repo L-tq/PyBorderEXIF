@@ -171,8 +171,6 @@ function renderLogos() {
             `<div class="te-row"><label>File</label><span style="font-size:0.8rem;">${esc(logo.filename || '')}</span></div>`,
             `<div class="te-row"><label>Width</label><input type="number" value="${logo.width || 200}" min="10" onchange="updateLogo(${idx},'width',this.value)"></div>`,
             `<div class="te-row"><label>Height</label><input type="number" value="${logo.height || 60}" min="10" onchange="updateLogo(${idx},'height',this.value)"></div>`,
-            `<div class="te-row"><label>rel_x</label><input type="number" value="${logo.rel_x || 0}" step="0.01" min="0" max="1" onchange="updateLogo(${idx},'rel_x',this.value)"></div>`,
-            `<div class="te-row"><label>rel_y</label><input type="number" value="${logo.rel_y || 0}" step="0.01" min="0" max="1" onchange="updateLogo(${idx},'rel_y',this.value)"></div>`,
             `<div class="te-row"><label>offset_x</label><input type="number" value="${logo.offset_x || 0}" onchange="updateLogo(${idx},'offset_x',this.value)"></div>`,
             `<div class="te-row"><label>offset_y</label><input type="number" value="${logo.offset_y || 0}" onchange="updateLogo(${idx},'offset_y',this.value)"></div>`,
         ].join('');
@@ -195,7 +193,7 @@ function addLogo() {
             config.logos.push({
                 filename: data.filename, path: data.path,
                 width: data.width, height: data.height,
-                rel_x: 0.05, rel_y: 0.05, offset_x: 0, offset_y: 0
+                offset_x: 0, offset_y: 0
             });
             await saveConfig();
             renderLogos();
@@ -208,7 +206,7 @@ function addLogo() {
 }
 
 function updateLogo(idx, field, value) {
-    config.logos[idx][field] = field.includes('rel') ? parseFloat(value) : parseInt(value) || 0;
+    config.logos[idx][field] = parseInt(value) || 0;
     saveConfig();
     debouncePreview();
 }
