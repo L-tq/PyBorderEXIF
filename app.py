@@ -34,10 +34,36 @@ from src.exif_reader import read_exif
 from src.border import calculate_border_custom, calculate_border_aspect_ratio
 from src.image_processor import process_image, generate_preview
 
-app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'exifborder-dev-secret-' + str(uuid.uuid4())[:8])
+def _get_secret_key():
+    """Get a persistent secret key shared across all workers.
+
+    Priority: SECRET_KEY env var > key file on disk > generate and persist.
+    """
+    env_key = os.environ.get('SECRET_KEY')
+    if env_key:
+        return env_key
+
+    key_file = os.path.join(BASE_DIR, '.secret_key')
+    try:
+        if os.path.exists(key_file):
+            with open(key_file, 'r') as f:
+                return f.read().strip()
+    except Exception:
+        pass
+
+    new_key = 'exifborder-' + uuid.uuid4().hex
+    try:
+        with open(key_file, 'w') as f:
+            f.write(new_key)
+    except Exception:
+        pass
+    return new_key
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+app = Flask(__name__)
+app.secret_key = _get_secret_key()
 UPLOADS_DIR = os.path.join(BASE_DIR, 'uploads')
 TEMP_DIR = os.path.join(BASE_DIR, 'temp')
 
