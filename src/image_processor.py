@@ -3,7 +3,7 @@
 import io
 import math
 import os
-from PIL import Image, ImageDraw, ImageFont, ImageColor
+from PIL import Image, ImageDraw, ImageFont, ImageColor, ImageOps
 
 FONTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'fonts')
 
@@ -223,7 +223,7 @@ def process_image(image_path, border_config, logos_config, text_lines,
             rgb = raw.postprocess()
             original = Image.fromarray(rgb)
     else:
-        original = Image.open(image_path)
+        original = ImageOps.exif_transpose(Image.open(image_path))
         if original.mode != 'RGB':
             original = original.convert('RGB')
 

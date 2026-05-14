@@ -133,9 +133,9 @@ def get_image_metadata(image_path):
     img_w, img_h = 0, 0
     ext = fname.lower().rsplit('.', 1)[-1] if '.' in fname else ''
     if ext in ('jpg', 'jpeg'):
-        from PIL import Image
+        from PIL import Image, ImageOps
         try:
-            with Image.open(image_path) as im:
+            with ImageOps.exif_transpose(Image.open(image_path)) as im:
                 img_w, img_h = im.size
         except Exception:
             pass
@@ -349,8 +349,8 @@ def _resolve_border(border_cfg, image_path):
         return result
 
     elif mode == 'aspect_ratio':
-        from PIL import Image as PILImage
-        with PILImage.open(image_path) as im:
+        from PIL import Image as PILImage, ImageOps
+        with ImageOps.exif_transpose(PILImage.open(image_path)) as im:
             img_w, img_h = im.size
 
         auto_param = border_cfg.get('auto_param', 'c')
