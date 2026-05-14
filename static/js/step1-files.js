@@ -12,6 +12,17 @@ const btnNext = document.getElementById('btnNext');
 
 let uploadedImages = [];
 
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const resp = await fetch('/api/images');
+        const data = await resp.json();
+        uploadedImages = data.images || [];
+        renderTable();
+    } catch (e) {
+        console.error('Failed to load existing images', e);
+    }
+});
+
 // Drop zone click
 dropZone.addEventListener('click', () => fileInput.click());
 
