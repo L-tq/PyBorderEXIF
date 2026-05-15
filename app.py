@@ -77,6 +77,12 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+def _jpg_name(filename):
+    """Replace the extension of a filename with .jpg."""
+    base = os.path.splitext(filename)[0]
+    return base + '.jpg'
+
+
 def get_session_dir():
     """Get or create a session-specific directory for uploaded files."""
     if 'session_id' not in session:
@@ -310,10 +316,11 @@ def generate_preview_api():
             max_dim=900
         )
         preview_id = uuid.uuid4().hex[:8]
-        preview_path = os.path.join(temp_dir, f'preview_{preview_id}_{safe_name}')
+        output_name = f'preview_{preview_id}_{_jpg_name(safe_name)}'
+        preview_path = os.path.join(temp_dir, output_name)
         preview.save(preview_path, quality=85)
         return jsonify({
-            'preview_url': f'/api/preview-image/{session["session_id"]}/preview_{preview_id}_{safe_name}'
+            'preview_url': f'/api/preview-image/{session["session_id"]}/{output_name}'
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -349,9 +356,15 @@ def _resolve_border(border_cfg, image_path):
         return result
 
     elif mode == 'aspect_ratio':
-        from PIL import Image as PILImage, ImageOps
-        with ImageOps.exif_transpose(PILImage.open(image_path)) as im:
-            img_w, img_h = im.size
+        if image_path.lower().endswith('.arw'):
+            import rawpy
+            with rawpy.imread(image_path) as raw:
+                img_w = raw.sizes.raw_width
+                img_h = raw.sizes.raw_height
+        else:
+            from PIL import Image as PILImage, ImageOps
+            with ImageOps.exif_transpose(PILImage.open(image_path)) as im:
+                img_w, img_h = im.size
 
         auto_param = border_cfg.get('auto_param', 'c')
         a = border_cfg.get('a')
@@ -471,7 +484,7 @@ def render_images():
         border_final = _resolve_border(border_cfg, image_path)
         exif = read_exif(image_path)
 
-        output_name = f'rendered_{fname}'
+        output_name = f'rendered_{_jpg_name(fname)}'
         output_path = os.path.join(temp_dir, output_name)
 
         try:
