@@ -26,30 +26,11 @@ brew install libraw
 
 `rawpy` provides pre-built wheels for macOS, but libraw must be present at runtime. Fonts are bundled with macOS (PingFang SC covers CJK) — no extra font packages needed.
 
-### Windows
-
-No system dependencies required. `rawpy` ships pre-built wheels for 64-bit Windows (Python 3.10–3.14).
-
-Run the font download script — it tries Google Fonts first, then falls back to GitHub mirrors for users in China:
-
-```powershell
-python download_fonts.py
-```
-
-This downloads Roboto (Latin) and Noto Sans CJK SC (Simplified Chinese) into `static/fonts/`. Pass `--force` to re-download.
-
-SVG logo support (`cairosvg`) needs the Cairo C library on Windows. If you don't need SVG logos, this is optional. To enable it, install via Conda:
-
-```powershell
-conda install -c conda-forge cairo cairosvg
-```
-
 ## Install
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate   # Linux/macOS
-# .venv\Scripts\activate    # Windows
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -62,10 +43,10 @@ The app needs fonts that cover both Latin and CJK characters for border text:
 | Roboto | Default border text (Latin) |
 | Noto Sans CJK | Chinese/Japanese/Korean glyphs |
 
-If system packages aren't available (Windows, offline, or no root), run the bundled download script:
+If system packages aren't available (offline, or no root), run the bundled download script:
 
 ```bash
-python download_fonts.py      # Linux / macOS / Windows
+python download_fonts.py
 python download_fonts.py --force  # re-download all
 ```
 
@@ -83,51 +64,6 @@ python app.py
 
 The dev server opens a browser automatically at `http://127.0.0.1:5000`.
 
-### Production
-
-Flask's built-in server is not suitable for production. Use a WSGI server:
-
-```bash
-# Linux / macOS
-pip install gunicorn
-gunicorn -w 4 -b 127.0.0.1:8000 app:app
-
-# Windows (gunicorn is Unix-only)
-pip install waitress
-waitress-serve --host 127.0.0.1 --port 8000 app:app
-```
-
-For a full production setup, place gunicorn behind a reverse proxy (nginx, Caddy) that handles TLS and serves static files:
-
-```nginx
-# Example nginx config
-server {
-    listen 443 ssl;
-    server_name example.com;
-
-    ssl_certificate     /etc/ssl/certs/example.com.pem;
-    ssl_certificate_key /etc/ssl/private/example.com.key;
-
-    # Static files served directly
-    location /static/ {
-        alias /opt/exifborder/static/;
-        expires 30d;
-    }
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-Set a persistent secret key for sessions:
-
-```bash
-export SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
-```
 
 ## Directory layout
 
